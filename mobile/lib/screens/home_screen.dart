@@ -309,26 +309,10 @@ class _Hero extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surface,
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: theme.colorScheme.outline),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.auto_awesome_rounded, size: 15, color: KhejaColors.blue),
-                    SizedBox(width: 7),
-                    Text(
-                      "Meru's Next-Gen Rental Platform",
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
+              // The tagline pill the web hero carries is dropped on mobile:
+              // the app bar already says Kheja_Link, and the vertical space is
+              // better spent on the headline and listings.
+              const SizedBox(height: 4),
               Text('Find Your', style: theme.textTheme.displaySmall),
               ShaderMask(
                 shaderCallback: (bounds) => const LinearGradient(

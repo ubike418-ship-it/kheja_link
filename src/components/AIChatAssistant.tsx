@@ -13,19 +13,25 @@ interface Message {
   content: string;
   properties?: AssistantProperty[];
   searchHref?: string;
+  hrefLabel?: string;
+  suggestions?: string[];
 }
 
-const SUGGESTIONS = [
+const OPENING_SUGGESTIONS = [
   "2 bedroom in Makutano under 30k",
-  "Bedsitter near MUST",
-  "Shop to let in Meru Town",
+  "Rooms near MUST",
+  "How do I list my house?",
+  "Is it safe?",
 ];
 
 const GREETING: Message = {
   id: "greeting",
   role: "assistant",
   content:
-    "Hi there! I'm your Kheja_Link assistant. Tell me your budget, the area and the kind of house you want, and I'll search every live listing for you.",
+    "Hi there! I'm the Kheja_Link assistant. I can search every live listing for you, or answer " +
+    "anything about how Kheja_Link works — listing a house, fees, safety, your account.\n\n" +
+    "What can I help with?",
+  suggestions: OPENING_SUGGESTIONS,
 };
 
 export default function AIChatAssistant() {
@@ -67,6 +73,8 @@ export default function AIChatAssistant() {
           content: reply.message,
           properties: reply.properties,
           searchHref: reply.searchHref,
+          hrefLabel: reply.hrefLabel,
+          suggestions: reply.suggestions,
         },
       ]);
     } catch {
@@ -168,7 +176,7 @@ export default function AIChatAssistant() {
                           : "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white rounded-tl-none border border-zinc-200 dark:border-zinc-700"
                       }`}
                     >
-                      {msg.content}
+                      <RichText content={msg.content} />
                     </div>
                   </div>
 
@@ -207,34 +215,54 @@ export default function AIChatAssistant() {
                           <ArrowUpRight className="w-4 h-4 text-zinc-300 group-hover:text-blue-600 transition-colors shrink-0" />
                         </Link>
                       ))}
-                      {msg.searchHref && (
-                        <Link
+                    </div>
+                  )}
+
+                  {/* A single call to action, when the answer offers one and
+                      there were no listing cards to click through instead. */}
+                  {msg.role === "assistant" &&
+                    msg.searchHref &&
+                    msg.hrefLabel &&
+                    (msg.properties?.length ?? 0) === 0 && (
+                      <div className="pl-11">
+                        <AssistantLink
                           href={msg.searchHref}
-                          onClick={() => setIsOpen(false)}
-                          className="block text-center text-[11px] font-black uppercase tracking-widest text-blue-600 hover:text-blue-700 py-2"
+                          label={msg.hrefLabel}
+                          onNavigate={() => setIsOpen(false)}
+                        />
+                      </div>
+                    )}
+
+                  {/* "See all matches", under a set of listing cards. */}
+                  {msg.role === "assistant" &&
+                    msg.searchHref &&
+                    (msg.properties?.length ?? 0) > 0 && (
+                      <div className="pl-11">
+                        <AssistantLink
+                          href={msg.searchHref}
+                          label={msg.hrefLabel ?? "See all matches"}
+                          onNavigate={() => setIsOpen(false)}
+                        />
+                      </div>
+                    )}
+
+                  {/* Follow-ups, so there is always somewhere obvious to go. */}
+                  {msg.role === "assistant" && msg.suggestions && msg.suggestions.length > 0 && (
+                    <div className="pl-11 flex flex-wrap gap-2">
+                      {msg.suggestions.map((suggestion) => (
+                        <button
+                          key={suggestion}
+                          onClick={() => send(suggestion)}
+                          disabled={isTyping}
+                          className="px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-full text-[11px] font-bold text-zinc-600 dark:text-zinc-300 hover:border-blue-500 hover:text-blue-600 transition-colors disabled:opacity-50"
                         >
-                          See all matches
-                        </Link>
-                      )}
+                          {suggestion}
+                        </button>
+                      ))}
                     </div>
                   )}
                 </motion.div>
               ))}
-
-              {/* Starter prompts, shown until the first question */}
-              {messages.length === 1 && !isTyping && (
-                <div className="pl-11 flex flex-wrap gap-2">
-                  {SUGGESTIONS.map((suggestion) => (
-                    <button
-                      key={suggestion}
-                      onClick={() => send(suggestion)}
-                      className="px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-full text-[11px] font-bold text-zinc-600 dark:text-zinc-300 hover:border-blue-500 hover:text-blue-600 transition-colors"
-                    >
-                      {suggestion}
-                    </button>
-                  ))}
-                </div>
-              )}
 
               {isTyping && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-start gap-3">
@@ -287,5 +315,77 @@ export default function AIChatAssistant() {
         )}
       </AnimatePresence>
     </>
+  );
+}
+
+/**
+ * Renders an assistant answer: blank lines become paragraphs, lines starting
+ * with a bullet stay bulleted, and **text** is emphasised. Deliberately not a
+ * markdown library — the assistant only ever emits these three things, and the
+ * content is ours rather than user input.
+ */
+function RichText({ content }: { content: string }) {
+  const blocks = content.split("\n").filter((line) => line.trim().length > 0);
+
+  return (
+    <div className="space-y-1.5">
+      {blocks.map((line, index) => {
+        const isBullet = line.trimStart().startsWith("•");
+        const text = isBullet ? line.trimStart().slice(1).trim() : line;
+
+        return (
+          <p key={index} className={isBullet ? "flex gap-2" : undefined}>
+            {isBullet && <span className="text-blue-600 shrink-0">•</span>}
+            <span>{renderEmphasis(text)}</span>
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Turns **bold** runs into <strong>, leaving everything else as text. */
+function renderEmphasis(text: string): React.ReactNode[] {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
+      return (
+        <strong key={index} className="font-black">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    return <span key={index}>{part}</span>;
+  });
+}
+
+/** The single call-to-action link under an answer. */
+function AssistantLink({
+  href,
+  label,
+  onNavigate,
+}: {
+  href: string;
+  label: string;
+  onNavigate: () => void;
+}) {
+  const isExternal = href.startsWith("http");
+
+  const className =
+    "inline-flex items-center gap-1.5 text-[11px] font-black uppercase tracking-widest text-blue-600 hover:text-blue-700 transition-colors py-1";
+
+  if (isExternal) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className={className}>
+        {label}
+        <ArrowUpRight className="w-3.5 h-3.5" />
+      </a>
+    );
+  }
+
+  return (
+    <Link href={href} onClick={onNavigate} className={className}>
+      {label}
+      <ArrowUpRight className="w-3.5 h-3.5" />
+    </Link>
   );
 }
