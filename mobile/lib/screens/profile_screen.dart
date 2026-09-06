@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../config/supabase_config.dart';
 import '../config/theme.dart';
 import '../main.dart';
 import '../models/models.dart';
@@ -438,15 +439,15 @@ class _SupportLinks extends StatelessWidget {
           children: [
             _Link(
               label: 'Help & safety',
-              onTap: () => _open(context, 'https://khejalink.co.ke/help'),
+              onTap: () => _open(context, '${SupabaseConfig.siteUrl}/help'),
             ),
             _Link(
               label: 'Terms',
-              onTap: () => _open(context, 'https://khejalink.co.ke/terms'),
+              onTap: () => _open(context, '${SupabaseConfig.siteUrl}/terms'),
             ),
             _Link(
               label: 'Privacy',
-              onTap: () => _open(context, 'https://khejalink.co.ke/privacy'),
+              onTap: () => _open(context, '${SupabaseConfig.siteUrl}/privacy'),
             ),
             _Link(
               label: 'hello@khejalink.co.ke',

@@ -39,6 +39,14 @@ class SupabaseConfig {
     return value;
   }
 
+  /// The public Kheja_Link website. Support links in the app point here.
+  /// Override per build with:
+  ///   flutter build apk --dart-define=SITE_URL=https://staging.example.com
+  static const siteUrl = String.fromEnvironment(
+    'SITE_URL',
+    defaultValue: 'https://khejalink.name.ng',
+  );
+
   /// Deep link Supabase sends users back to after they confirm their email.
   /// Must match the scheme registered in AndroidManifest.xml / Info.plist and
   /// be listed under Authentication → URL Configuration in Supabase.
