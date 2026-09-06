@@ -15,6 +15,7 @@ Kheja_Link is a rental property discovery platform for Meru, Kenya. It focuses s
 - `src/lib/supabase/` — `client.ts` (browser), `server.ts` (RSC / actions), `env.ts`, `database.types.ts`.
 - `src/lib/queries/` — reads. `src/lib/actions/` — writes, as server actions.
 - `supabase/migrations/` — schema, RLS and seed. `supabase/setup.sql` is all three concatenated.
+- `mobile/` — the Flutter app (Android, iOS, web). It shares the Supabase project with the web app; `mobile/lib/services/kheja_api.dart` is its whole data layer and mirrors `src/lib/queries/`. Keep the two in step: a change to the schema or to query semantics needs updating on both sides.
 
 ## Conventions
 - **Authorization belongs in RLS**, not in application code. Application checks exist only to produce friendly messages.

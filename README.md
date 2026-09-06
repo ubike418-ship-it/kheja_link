@@ -4,8 +4,18 @@ A modern rental-discovery platform for **Meru, Kenya**. Kheja_Link makes long-te
 hunting — apartments, bedsitters, single rooms, family homes and shops — simple, searchable
 and transparent, and gives landlords a straightforward way to list and manage their properties.
 
-Built with **Next.js 15** (App Router), **Supabase** (PostgreSQL, Auth, Storage, Row Level
-Security) and **Tailwind CSS v4**, and deployed on **Vercel**.
+This repository holds both clients:
+
+| | |
+| --- | --- |
+| **Web** (repo root) | Next.js 15 (App Router), Tailwind CSS v4, deployed on Vercel |
+| **Mobile** ([`mobile/`](mobile/)) | Flutter — Android, iOS and web |
+
+Both talk to the **same Supabase project** (PostgreSQL, Auth, Storage, Row Level Security),
+so a listing published on the web appears in the app immediately, and a home saved on the
+phone shows up on the website under the same account.
+
+See [`mobile/README.md`](mobile/README.md) for the Flutter app.
 
 ---
 
@@ -58,7 +68,10 @@ In Supabase → **Authentication → URL Configuration**, add these to *Redirect
 ```
 http://localhost:3000/auth/callback
 https://your-domain.vercel.app/auth/callback
+ke.co.khejalink://login-callback
 ```
+
+The last one is the Flutter app's deep link, so email confirmations return to the app.
 
 Set *Site URL* to your production domain.
 
@@ -87,6 +100,7 @@ Open <http://localhost:3000>.
 ## Architecture
 
 ```
+mobile/                       The Flutter app (see mobile/README.md)
 src/
 ├── app/                      Routes (App Router)
 │   ├── page.tsx              Home — hero, category menu, featured listings

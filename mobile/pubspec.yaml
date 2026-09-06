@@ -1,0 +1,67 @@
+name: kheja_link
+description: "Kheja_Link — find your next rental home in Meru, Kenya."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # Backend — the same Supabase project the web app uses.
+  supabase_flutter: ^2.8.0
+
+  # UI
+  cached_network_image: ^3.4.1
+  intl: ^0.19.0
+  url_launcher: ^6.3.1
+  flutter_dotenv: ^5.2.1
+  shimmer: ^3.0.0
+  image_picker: ^1.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  # The pure-Dart Supabase client, so the API smoke tests can build a client
+  # without Flutter platform channels.
+  supabase: ^2.9.1
+  flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.14.2
+  flutter_native_splash: ^2.4.3
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/branding/
+    - .env
+
+# The official Kheja_Link mark, used as the launcher icon on every platform.
+flutter_launcher_icons:
+  image_path: "assets/branding/logo.jpeg"
+  remove_alpha_ios: true
+
+  android: "launcher_icon"
+  min_sdk_android: 21
+  # The logo already sits on its own dark ground, so the adaptive-icon
+  # background is matched to it rather than left white.
+  adaptive_icon_background: "#1B2430"
+  adaptive_icon_foreground: "assets/branding/logo.jpeg"
+
+  ios: true
+
+  web:
+    generate: true
+    background_color: "#1B2430"
+    theme_color: "#2563EB"
+
+flutter_native_splash:
+  color: "#1B2430"
+  image: assets/branding/lockup.jpeg
+  android_12:
+    color: "#1B2430"
+    # Android 12+ masks the splash icon into a circle, so the mark-only logo
+    # is the right asset there — a wordmark would be cropped away.
+    image: assets/branding/logo.jpeg

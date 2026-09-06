@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import Logo from "@/components/Logo";
@@ -34,6 +35,19 @@ export default function AuthShell({
             <ArrowLeft className="w-4 h-4" />
             Home
           </Link>
+        </div>
+
+        {/* The full lockup, where there is room to show it properly. The
+            navbar and favicon use the mark alone, which stays legible small. */}
+        <div className="relative w-full aspect-[5/2] rounded-[2rem] overflow-hidden ring-1 ring-black/5 dark:ring-white/10">
+          <Image
+            src="/khejalink-lockup.jpeg"
+            alt="Kheja_Link"
+            fill
+            sizes="(max-width: 768px) 100vw, 448px"
+            className="object-cover"
+            priority
+          />
         </div>
 
         <div className="space-y-3">

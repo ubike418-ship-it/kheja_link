@@ -119,9 +119,17 @@ security definer
 set search_path = public
 as $$
 begin
+  -- auth.uid() is null for trusted server-side work (migrations, seeds, the
+  -- service role). This guard exists to stop an end user escalating their own
+  -- privileges, so it should not fire outside a user request.
+  if auth.uid() is null then
+    return new;
+  end if;
+
   if public.current_role_is(array['admin']::public.user_role[]) then
     return new;
   end if;
+
   -- A user may opt in to being a landlord, but may not grant themselves admin
   -- and may not self-verify.
   if new.role = 'admin' and old.role <> 'admin' then
