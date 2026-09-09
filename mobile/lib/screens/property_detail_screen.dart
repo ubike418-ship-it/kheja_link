@@ -445,7 +445,7 @@ class _GallerySliver extends StatelessWidget {
                 onPageChanged: onPageChanged,
                 itemCount: images.length,
                 itemBuilder: (_, index) =>
-                    PropertyImageView(url: images[index].url),
+                    PropertyImageView(url: images[index].url, width: 900),
               ),
             const DecoratedBox(
               decoration: BoxDecoration(

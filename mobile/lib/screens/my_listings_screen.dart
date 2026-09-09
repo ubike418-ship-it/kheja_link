@@ -248,7 +248,7 @@ class _ListingRow extends StatelessWidget {
                 child: SizedBox(
                   width: 78,
                   height: 66,
-                  child: PropertyImageView(url: property.coverUrl),
+                  child: PropertyImageView(url: property.coverUrl, width: 200),
                 ),
               ),
               const SizedBox(width: 14),

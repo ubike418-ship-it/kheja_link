@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 
 import '../config/theme.dart';
+import '../services/network.dart';
 
 /// Loading, empty and error states — every screen that touches the network
 /// uses these, so the app never shows a bare spinner or a raw exception.
@@ -156,10 +157,17 @@ class KhejaErrorState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // "You are offline" and "the server said no" need different words. On a
+    // patchy mobile connection the first is by far the more common.
+    final offline = KhejaNetwork.isConnectionError(message);
+
     return KhejaEmptyState(
-      icon: Icons.wifi_off_rounded,
-      title: 'Could not load',
-      message: message,
+      icon: offline ? Icons.signal_wifi_off_rounded : Icons.error_outline_rounded,
+      title: offline ? 'No connection' : 'Could not load',
+      message: offline
+          ? 'We could not reach Kheja_Link. Check your mobile data or WiFi and '
+              'try again — your saved homes are safe.'
+          : message,
       actionLabel: onRetry == null ? null : 'Try again',
       onAction: onRetry,
     );

@@ -2,6 +2,9 @@
     <!-- Listings, photos and auth all come from Supabase over the network.
          Debug builds get this implicitly; release builds need it declared. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- So the app can tell "you are offline" apart from "something broke",
+         which are very different messages on a patchy mobile connection. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
 
     <application
         android:label="Kheja_Link"

@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kheja_link/models/models.dart';
 import 'package:kheja_link/services/kheja_api.dart';
+import 'package:kheja_link/services/network.dart';
 import 'package:supabase/supabase.dart';
 
 /// Smoke tests for the data layer, run against the real Supabase project.
@@ -140,6 +142,8 @@ void main() {
   });
 
   marketplaceTests(() => api, configured);
+
+  networkTests();
 
   group('formatting', () {
     test('rent reads the way the design specifies', () {
@@ -293,5 +297,82 @@ void marketplaceTests(KhejaApi Function() apiOf, bool configured) {
       expect(await apiOf().fetchNotifications(), isEmpty);
       expect(await apiOf().fetchUnreadNotificationCount(), 0);
     }, skip: skip);
+  });
+}
+
+/// Image sizing and connection handling — the difference between the app
+/// working on WiFi and working on a mobile bundle.
+void networkTests() {
+  group('image sizing', () {
+    const seeded =
+        'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267'
+        '?auto=format&fit=crop&q=80&w=1200';
+
+    test('a card asks for far fewer pixels than the seeded 1200', () {
+      final card = sizedImageUrl(seeded, 720);
+      expect(card, contains('w=720'));
+      expect(card, isNot(contains('w=1200')));
+    });
+
+    test('a thumbnail drops the quality too', () {
+      final thumb = sizedImageUrl(seeded, 200);
+      expect(thumb, contains('w=200'));
+      expect(thumb, contains('q=65'));
+    });
+
+    test('a non-Unsplash url is left alone rather than guessed at', () {
+      const other = 'https://example.com/a.jpg';
+      expect(sizedImageUrl(other, 400), other);
+    });
+
+    test('an empty url does not crash', () {
+      expect(sizedImageUrl('', 400), '');
+    });
+  });
+
+  group('connection errors', () {
+    test('timeouts and socket failures are recognised', () {
+      expect(
+        KhejaNetwork.isConnectionError(TimeoutException('slow')),
+        isTrue,
+      );
+      expect(
+        KhejaNetwork.isConnectionError(
+          const SocketException('Failed host lookup: supabase.co'),
+        ),
+        isTrue,
+      );
+      expect(KhejaNetwork.isConnectionError('Connection reset by peer'), isTrue);
+    });
+
+    test('a permission refusal is not mistaken for being offline', () {
+      expect(
+        KhejaNetwork.isConnectionError('permission denied for table properties'),
+        isFalse,
+      );
+    });
+
+    test('retries stop once the call succeeds', () async {
+      var calls = 0;
+      final value = await KhejaNetwork.run(() async {
+        calls++;
+        if (calls < 2) throw const SocketException('flaky');
+        return 'ok';
+      });
+      expect(value, 'ok');
+      expect(calls, 2);
+    });
+
+    test('a real error is not retried', () async {
+      var calls = 0;
+      await expectLater(
+        KhejaNetwork.run(() async {
+          calls++;
+          throw StateError('bad request');
+        }),
+        throwsA(isA<StateError>()),
+      );
+      expect(calls, 1, reason: 'a non-network error should not be retried');
+    });
   });
 }

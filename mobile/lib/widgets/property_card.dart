@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../config/theme.dart';
 import '../models/models.dart';
+import '../services/network.dart';
 
 /// The listing card, carried over from the web design: tall image, glass
 /// badges, the rent overlaid bottom-left, and a stats strip under the title.
@@ -108,7 +109,7 @@ class _Cover extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          PropertyImageView(url: property.coverUrl),
+          PropertyImageView(url: property.coverUrl, width: 720),
 
           // Scrim, so the white badges and price stay legible on any photo.
           const DecoratedBox(
@@ -183,10 +184,20 @@ class _Cover extends StatelessWidget {
 /// Network image with a neutral placeholder and a graceful failure state —
 /// a broken photo should never look like a broken app.
 class PropertyImageView extends StatelessWidget {
-  const PropertyImageView({super.key, required this.url, this.fit = BoxFit.cover});
+  const PropertyImageView({
+    super.key,
+    required this.url,
+    this.fit = BoxFit.cover,
+    this.width = 640,
+  });
 
   final String? url;
   final BoxFit fit;
+
+  /// The width actually being drawn. Requesting only this makes the app usable
+  /// on mobile data — the seeded photos are 1200px, which is several megabytes
+  /// across a full screen of listings.
+  final int width;
 
   @override
   Widget build(BuildContext context) {
@@ -205,8 +216,11 @@ class PropertyImageView extends StatelessWidget {
     }
 
     return CachedNetworkImage(
-      imageUrl: url!,
+      imageUrl: sizedImageUrl(url!, width),
       fit: fit,
+      // Decode at roughly the drawn size too, which keeps memory down on the
+      // cheaper phones this app is mostly used on.
+      memCacheWidth: width,
       fadeInDuration: const Duration(milliseconds: 250),
       placeholder: (_, __) => Container(color: placeholderColor),
       errorWidget: (_, __, ___) => Container(

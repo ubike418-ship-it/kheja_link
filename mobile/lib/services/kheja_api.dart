@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/models.dart';
+import 'network.dart';
 
 /// Every read and write the app performs.
 ///
@@ -33,17 +34,20 @@ class KhejaApi {
   // ---------------------------------------------------------------------------
 
   Future<List<PropertyType>> fetchPropertyTypes() async {
-    final rows = await _client.from('property_types').select().order('sort_order');
+    final rows = await KhejaNetwork.run(
+        () => _client.from('property_types').select().order('sort_order'));
     return rows.map<PropertyType>((r) => PropertyType.fromMap(r)).toList();
   }
 
   Future<List<KhejaLocation>> fetchLocations() async {
-    final rows = await _client.from('locations').select().order('name');
+    final rows = await KhejaNetwork.run(
+        () => _client.from('locations').select().order('name'));
     return rows.map<KhejaLocation>((r) => KhejaLocation.fromMap(r)).toList();
   }
 
   Future<List<Amenity>> fetchAmenities() async {
-    final rows = await _client.from('amenities').select().order('sort_order');
+    final rows = await KhejaNetwork.run(
+        () => _client.from('amenities').select().order('sort_order'));
     return rows.map<Amenity>((r) => Amenity.fromMap(r)).toList();
   }
 
@@ -126,13 +130,15 @@ class KhejaApi {
     }
 
     final from = (page - 1) * perPage;
-    final rows = await switch (filters.sort) {
+    final sorted = switch (filters.sort) {
       PropertySort.priceAsc => query.order('price_amount', ascending: true),
       PropertySort.priceDesc => query.order('price_amount', ascending: false),
       PropertySort.bedroomsDesc => query.order('bedrooms', ascending: false),
       PropertySort.popular => query.order('view_count', ascending: false),
       PropertySort.newest => query.order('published_at', ascending: false),
-    }.range(from, from + perPage - 1);
+    };
+    final rows =
+        await KhejaNetwork.run(() => sorted.range(from, from + perPage - 1));
 
     final favorites = await fetchFavoriteIds();
     return rows
@@ -165,11 +171,11 @@ class KhejaApi {
   }
 
   Future<Property?> fetchPropertyBySlug(String slug) async {
-    final row = await _client
+    final row = await KhejaNetwork.run(() => _client
         .from('properties')
         .select('$_listSelect, property_amenities ( amenities ( id, slug, name ) )')
         .eq('slug', slug)
-        .maybeSingle();
+        .maybeSingle());
 
     if (row == null) return null;
 
@@ -697,6 +703,12 @@ String describeError(Object error) {
       return 'Too many attempts. Please wait a moment and try again.';
     }
     return error.message;
+  }
+
+  // A stalled or dropped mobile connection is the single most common failure
+  // in the field, and it deserves its own words rather than a generic error.
+  if (KhejaNetwork.isConnectionError(error)) {
+    return 'No connection. Check your mobile data or WiFi and try again.';
   }
 
   if (error is PostgrestException) {
