@@ -9,7 +9,10 @@ import '../main.dart';
 import '../models/models.dart';
 import '../services/kheja_api.dart';
 import '../widgets/property_card.dart';
+import '../widgets/partner_rails.dart';
 import '../widgets/states.dart';
+import '../widgets/unlock_card.dart';
+import 'auth_screen.dart';
 import 'inquiry_sheet.dart';
 
 /// The full listing: photo gallery, key facts, description, amenities,
@@ -26,6 +29,9 @@ class PropertyDetailScreen extends StatefulWidget {
 class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   Property? _property;
   List<Property> _similar = const [];
+  List<Partner> _partners = const [];
+  PropertyContact _contact = PropertyContact.locked;
+  Tenancy? _myTenancy;
   bool _isLoading = true;
   String? _error;
   int _imageIndex = 0;
@@ -66,10 +72,24 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
         _isLoading = false;
       });
 
-      // Fire-and-forget; neither should block the page.
+      // Fire-and-forget; this must never block the page.
       unawaited(khejaApi.recordView(property.id));
-      final similar = await khejaApi.fetchSimilar(property);
-      if (mounted) setState(() => _similar = similar);
+
+      // Everything else can arrive after the listing itself is on screen.
+      final rest = await Future.wait([
+        khejaApi.fetchSimilar(property),
+        khejaApi.fetchPropertyContact(property.id),
+        khejaApi.fetchPartners(),
+        khejaApi.fetchMyTenancyFor(property.id),
+      ]);
+
+      if (!mounted) return;
+      setState(() {
+        _similar = rest[0] as List<Property>;
+        _contact = rest[1] as PropertyContact;
+        _partners = rest[2] as List<Partner>;
+        _myTenancy = rest[3] as Tenancy?;
+      });
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -101,10 +121,81 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     }
   }
 
-  String? _digits(String? raw) {
-    if (raw == null) return null;
-    final cleaned = raw.replaceAll(RegExp(r'[^\d+]'), '');
-    return cleaned.replaceAll(RegExp(r'\D'), '').length >= 7 ? cleaned : null;
+  /// Re-reads the contact after a payment. The database decides whether the
+  /// details come back; the app just asks again.
+  Future<void> _refreshContact() async {
+    final property = _property;
+    if (property == null) return;
+    final contact = await khejaApi.fetchPropertyContact(property.id);
+    if (!mounted) return;
+    setState(() => _contact = contact);
+  }
+
+  /// Sends the user to sign in, returning whether they came back signed in.
+  Future<bool> _requireSignIn() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const AuthScreen()),
+    );
+    if (!mounted) return false;
+    final signedIn = khejaApi.isSignedIn;
+    if (signedIn) await _refreshContact();
+    return signedIn;
+  }
+
+  Future<void> _book(Property property) async {
+    if (!khejaApi.isSignedIn && !await _requireSignIn()) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(KhejaRadius.lg),
+        ),
+        title: const Text('Book this home?'),
+        content: Text(
+          'This tells the landlord you intend to move into ${property.title}. '
+          'It is not a payment, and it does not replace seeing the house first.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Book'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await khejaApi.bookProperty(property.id);
+      final tenancy = await khejaApi.fetchMyTenancyFor(property.id);
+      if (!mounted) return;
+      setState(() => _myTenancy = tenancy);
+      showKhejaSnack(context, 'Booked. The landlord has been notified.');
+    } catch (error) {
+      if (!mounted) return;
+      showKhejaSnack(context, describeError(error), isError: true);
+    }
+  }
+
+  Future<void> _setTenancy(String status, String message) async {
+    final tenancy = _myTenancy;
+    if (tenancy == null) return;
+    try {
+      await khejaApi.setTenancyStatus(tenancy.id, status);
+      final updated = await khejaApi.fetchMyTenancyFor(tenancy.propertyId);
+      if (!mounted) return;
+      setState(() => _myTenancy = updated);
+      showKhejaSnack(context, message);
+    } catch (error) {
+      if (!mounted) return;
+      showKhejaSnack(context, describeError(error), isError: true);
+    }
   }
 
   @override
@@ -199,6 +290,15 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                     ),
                   ],
 
+                  if (property.houseRules != null &&
+                      property.houseRules!.trim().isNotEmpty) ...[
+                    const SizedBox(height: 34),
+                    Text('House rules',
+                        style: Theme.of(context).textTheme.titleLarge),
+                    const SizedBox(height: 12),
+                    _HouseRules(rules: property.houseRules!),
+                  ],
+
                   const SizedBox(height: 34),
                   _LocationCard(
                     property: property,
@@ -210,16 +310,42 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                   _LandlordCard(property: property),
 
                   const SizedBox(height: 20),
-                  _ContactActions(
-                    phone: _digits(property.contactPhone),
-                    whatsapp: _digits(property.contactWhatsapp ?? property.contactPhone),
-                    title: property.title,
-                    onLaunch: _launch,
-                    onMessage: () => _openInquiry(property),
+                  UnlockCard(
+                    property: property,
+                    contact: _contact,
+                    onUnlocked: _refreshContact,
+                    onRequireSignIn: _requireSignIn,
                   ),
 
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _openInquiry(property),
+                      icon: const Icon(Icons.mail_outline_rounded, size: 20),
+                      label: const Text('Send a free message'),
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+                  _TenancyCard(
+                    tenancy: _myTenancy,
+                    onBook: () => _book(property),
+                    onCheckIn: () => _setTenancy(
+                      'checked_in',
+                      'Checked in. The landlord has been told.',
+                    ),
+                    onMoveOut: () => _setTenancy(
+                      'moved_out',
+                      'Moved out. The landlord has been told.',
+                    ),
+                  ),
+
+                  const SizedBox(height: 22),
                   const _SafetyNote(),
+
+                  const SizedBox(height: 30),
+                  PartnerRails(partners: _partners),
 
                   if (_similar.isNotEmpty) ...[
                     const SizedBox(height: 40),
@@ -722,76 +848,6 @@ class _LandlordCard extends StatelessWidget {
   }
 }
 
-class _ContactActions extends StatelessWidget {
-  const _ContactActions({
-    required this.phone,
-    required this.whatsapp,
-    required this.title,
-    required this.onLaunch,
-    required this.onMessage,
-  });
-
-  final String? phone;
-  final String? whatsapp;
-  final String title;
-  final Future<void> Function(Uri, String) onLaunch;
-  final VoidCallback onMessage;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        if (phone != null)
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: () => onLaunch(
-                Uri.parse('tel:$phone'),
-                'Could not start a call on this device.',
-              ),
-              icon: const Icon(Icons.phone_rounded, size: 20),
-              label: const Text('Call landlord'),
-              style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.onSurface,
-                foregroundColor: Theme.of(context).colorScheme.surface,
-              ),
-            ),
-          ),
-        if (whatsapp != null) ...[
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: () {
-                final digits = whatsapp!.replaceAll(RegExp(r'\D'), '');
-                final text = Uri.encodeComponent(
-                  'Hi, I saw "$title" on Kheja_Link. Is it still available?',
-                );
-                onLaunch(
-                  Uri.parse('https://wa.me/$digits?text=$text'),
-                  'Could not open WhatsApp on this device.',
-                );
-              },
-              icon: const Icon(Icons.chat_rounded, size: 20),
-              label: const Text('WhatsApp'),
-              style: FilledButton.styleFrom(backgroundColor: KhejaColors.emerald),
-            ),
-          ),
-        ],
-        const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: onMessage,
-            icon: const Icon(Icons.mail_outline_rounded, size: 20),
-            label: const Text('Send a message'),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class _SafetyNote extends StatelessWidget {
   const _SafetyNote();
 
@@ -814,6 +870,151 @@ class _SafetyNote extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// The landlord's rules for the house, if they set any.
+class _HouseRules extends StatelessWidget {
+  const _HouseRules({required this.rules});
+
+  final String rules;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    // Landlords write these as sentences or as a list; either renders sensibly.
+    final lines = rules
+        .split(RegExp(r'[\n•]|(?<=\.)\s+(?=[A-Z])'))
+        .map((l) => l.trim())
+        .where((l) => l.isNotEmpty)
+        .toList();
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: KhejaColors.amber.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(KhejaRadius.xl),
+        border: Border.all(color: KhejaColors.amber.withValues(alpha: 0.28)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final line in lines)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6),
+                    child: Icon(Icons.circle, size: 6, color: KhejaColors.amber),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      line,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: KhejaColors.zinc600,
+                        height: 1.5,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Booking, checking in and moving out — the tenant's side of occupancy.
+/// Each step notifies the landlord.
+class _TenancyCard extends StatelessWidget {
+  const _TenancyCard({
+    required this.tenancy,
+    required this.onBook,
+    required this.onCheckIn,
+    required this.onMoveOut,
+  });
+
+  final Tenancy? tenancy;
+  final VoidCallback onBook;
+  final VoidCallback onCheckIn;
+  final VoidCallback onMoveOut;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final t = tenancy;
+
+    if (t == null) {
+      return SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: onBook,
+          icon: const Icon(Icons.event_available_rounded, size: 20),
+          label: const Text('Book this home'),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: KhejaColors.emerald.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(KhejaRadius.xl),
+        border: Border.all(color: KhejaColors.emerald.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.check_circle_rounded,
+                  size: 18, color: KhejaColors.emerald),
+              const SizedBox(width: 10),
+              Text(t.statusLabel, style: theme.textTheme.titleMedium),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            t.status == 'booked'
+                ? 'The landlord knows you intend to move in. Tell us when you '
+                    'actually do, so they can update the listing.'
+                : 'You are recorded as living here. Let us know when you move '
+                    'out and the home goes back on the market.',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: KhejaColors.zinc500,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 14),
+          if (t.status == 'booked')
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: onCheckIn,
+                icon: const Icon(Icons.login_rounded, size: 19),
+                label: const Text('I have moved in'),
+                style: FilledButton.styleFrom(backgroundColor: KhejaColors.emerald),
+              ),
+            )
+          else if (t.status == 'checked_in')
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: onMoveOut,
+                icon: const Icon(Icons.logout_rounded, size: 19),
+                label: const Text('I have moved out'),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

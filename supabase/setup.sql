@@ -950,3 +950,963 @@ begin
     on conflict do nothing;
   end loop;
 end $$;
+
+-- =============================================================================
+-- Kheja_Link — 0004_marketplace.sql
+--
+-- Adds, on top of the base schema:
+--   * like counts on listings
+--   * in-app notifications, including "a home you liked is vacant again"
+--   * the KSh 150 contact unlock, enforced in the database rather than the UI
+--   * tenancies: booked -> checked in -> moved out, with landlord notifications
+--   * house rules on a listing
+--   * the partner directory behind the movers / internet / cleaning rails
+--
+-- Safe to re-run. Run AFTER 0003_seed.sql.
+-- =============================================================================
+
+set search_path = public, extensions;
+
+-- -----------------------------------------------------------------------------
+-- Enums
+-- -----------------------------------------------------------------------------
+do $$ begin
+  create type public.notification_type as enum (
+    'vacancy', 'inquiry', 'booking', 'check_in', 'move_out', 'listing_status', 'system'
+  );
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create type public.unlock_status as enum ('pending', 'paid', 'failed', 'refunded');
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create type public.tenancy_status as enum ('booked', 'checked_in', 'moved_out', 'cancelled');
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create type public.partner_category as enum ('movers', 'isp', 'cleaning');
+exception when duplicate_object then null; end $$;
+
+-- -----------------------------------------------------------------------------
+-- New columns on properties
+-- -----------------------------------------------------------------------------
+alter table public.properties add column if not exists like_count  int not null default 0;
+alter table public.properties add column if not exists house_rules text;
+
+-- The exact position of the house, as opposed to locations.latitude/longitude
+-- which is only the area. This is part of what the KSh 150 unlocks, so it is
+-- revoked from the API roles below.
+alter table public.properties add column if not exists latitude  numeric(9,6);
+alter table public.properties add column if not exists longitude numeric(9,6);
+
+-- -----------------------------------------------------------------------------
+-- notifications — in-app only, no push infrastructure
+-- -----------------------------------------------------------------------------
+create table if not exists public.notifications (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references public.profiles(id) on delete cascade,
+  type        public.notification_type not null default 'system',
+  title       text not null,
+  body        text,
+  property_id uuid references public.properties(id) on delete cascade,
+  is_read     boolean not null default false,
+  created_at  timestamptz not null default now()
+);
+
+create index if not exists notifications_user_idx
+  on public.notifications (user_id, is_read, created_at desc);
+
+-- -----------------------------------------------------------------------------
+-- contact_unlocks — the KSh 150 purchase
+-- -----------------------------------------------------------------------------
+create table if not exists public.contact_unlocks (
+  id           uuid primary key default gen_random_uuid(),
+  user_id      uuid not null references public.profiles(id) on delete cascade,
+  property_id  uuid not null references public.properties(id) on delete cascade,
+  amount       numeric(10,2) not null default 150,
+  currency     char(3) not null default 'KES',
+  status       public.unlock_status not null default 'pending',
+  provider     text not null default 'paystack',
+  provider_ref text,
+  created_at   timestamptz not null default now(),
+  paid_at      timestamptz,
+  constraint contact_unlocks_amount_positive check (amount > 0)
+);
+
+-- A person pays once per house; re-opening it later stays unlocked.
+create unique index if not exists contact_unlocks_one_paid_idx
+  on public.contact_unlocks (user_id, property_id) where status = 'paid';
+
+create index if not exists contact_unlocks_user_idx on public.contact_unlocks (user_id);
+create unique index if not exists contact_unlocks_ref_idx
+  on public.contact_unlocks (provider_ref) where provider_ref is not null;
+
+-- -----------------------------------------------------------------------------
+-- tenancies — booked, checked in, moved out
+-- -----------------------------------------------------------------------------
+create table if not exists public.tenancies (
+  id            uuid primary key default gen_random_uuid(),
+  property_id   uuid not null references public.properties(id) on delete cascade,
+  tenant_id     uuid not null references public.profiles(id) on delete cascade,
+  status        public.tenancy_status not null default 'booked',
+  booked_at     timestamptz not null default now(),
+  checked_in_at timestamptz,
+  moved_out_at  timestamptz,
+  note          text,
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+
+create index if not exists tenancies_property_idx on public.tenancies (property_id, status);
+create index if not exists tenancies_tenant_idx   on public.tenancies (tenant_id, created_at desc);
+
+-- One live tenancy per person per house.
+create unique index if not exists tenancies_one_active_idx
+  on public.tenancies (property_id, tenant_id)
+  where status in ('booked', 'checked_in');
+
+drop trigger if exists tenancies_set_updated_at on public.tenancies;
+create trigger tenancies_set_updated_at
+  before update on public.tenancies
+  for each row execute function public.set_updated_at();
+
+-- -----------------------------------------------------------------------------
+-- partners — the movers / internet / cleaning rails under a listing
+-- -----------------------------------------------------------------------------
+create table if not exists public.partners (
+  id          uuid primary key default gen_random_uuid(),
+  category    public.partner_category not null,
+  slug        text not null unique,
+  name        text not null,
+  tagline     text,
+  -- Null until a real agreement exists. Until then the app draws a styled
+  -- name tile, so no third-party trademark is reproduced.
+  logo_url    text,
+  brand_color text not null default '#2563EB',
+  icon        text,
+  phone       text,
+  url         text,
+  is_ours     boolean not null default false,
+  is_active   boolean not null default true,
+  sort_order  int not null default 0,
+  created_at  timestamptz not null default now()
+);
+
+create index if not exists partners_category_idx
+  on public.partners (category, sort_order) where is_active;
+
+-- =============================================================================
+-- Like counts
+-- =============================================================================
+create or replace function public.sync_like_count()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if tg_op = 'INSERT' then
+    update public.properties
+       set like_count = like_count + 1
+     where id = new.property_id;
+    return new;
+  else
+    update public.properties
+       set like_count = greatest(0, like_count - 1)
+     where id = old.property_id;
+    return old;
+  end if;
+end;
+$$;
+
+drop trigger if exists favorites_sync_like_count on public.favorites;
+create trigger favorites_sync_like_count
+  after insert or delete on public.favorites
+  for each row execute function public.sync_like_count();
+
+-- Backfill for anything saved before this migration.
+update public.properties p
+   set like_count = coalesce((
+     select count(*) from public.favorites f where f.property_id = p.id
+   ), 0);
+
+-- =============================================================================
+-- Vacancy notifications
+--
+-- The point of the feature: someone likes a house that is taken, and hears
+-- about it the moment it frees up.
+-- =============================================================================
+create or replace function public.notify_watchers_on_status_change()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_location text;
+begin
+  if new.status = old.status then
+    return new;
+  end if;
+
+  select l.name into v_location from public.locations l where l.id = new.location_id;
+
+  -- Became available again.
+  if new.status = 'published' and old.status in ('rented', 'archived', 'draft') then
+    insert into public.notifications (user_id, type, title, body, property_id)
+    select f.user_id,
+           'vacancy',
+           'A home you liked is available',
+           new.title || ' in ' || coalesce(v_location, 'Meru') ||
+             ' is vacant again. Be quick — saved homes go fast.',
+           new.id
+      from public.favorites f
+     where f.property_id = new.id
+       and f.user_id <> new.owner_id;
+  end if;
+
+  -- Just taken.
+  if new.status = 'rented' and old.status = 'published' then
+    insert into public.notifications (user_id, type, title, body, property_id)
+    select f.user_id,
+           'listing_status',
+           'A home you liked has been taken',
+           new.title || ' is no longer available. We will tell you if it frees up.',
+           new.id
+      from public.favorites f
+     where f.property_id = new.id
+       and f.user_id <> new.owner_id;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists properties_notify_watchers on public.properties;
+create trigger properties_notify_watchers
+  after update of status on public.properties
+  for each row execute function public.notify_watchers_on_status_change();
+
+-- =============================================================================
+-- Tenancy notifications, so a landlord knows who is coming and going
+-- =============================================================================
+create or replace function public.notify_landlord_on_tenancy()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_owner uuid;
+  v_title text;
+  v_name  text;
+begin
+  select p.owner_id, p.title into v_owner, v_title
+    from public.properties p where p.id = new.property_id;
+
+  select coalesce(pr.full_name, 'Someone') into v_name
+    from public.profiles pr where pr.id = new.tenant_id;
+
+  if tg_op = 'INSERT' then
+    insert into public.notifications (user_id, type, title, body, property_id)
+    values (v_owner, 'booking', 'New booking request',
+            v_name || ' has booked to move into ' || v_title || '.', new.property_id);
+    return new;
+  end if;
+
+  if new.status <> old.status then
+    if new.status = 'checked_in' then
+      insert into public.notifications (user_id, type, title, body, property_id)
+      values (v_owner, 'check_in', 'Tenant has checked in',
+              v_name || ' has moved into ' || v_title || '.', new.property_id);
+    elsif new.status = 'moved_out' then
+      insert into public.notifications (user_id, type, title, body, property_id)
+      values (v_owner, 'move_out', 'Tenant has moved out',
+              v_name || ' has moved out of ' || v_title ||
+                '. Publish it again to let people know it is vacant.',
+              new.property_id);
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists tenancies_notify_landlord on public.tenancies;
+create trigger tenancies_notify_landlord
+  after insert or update of status on public.tenancies
+  for each row execute function public.notify_landlord_on_tenancy();
+
+-- Tell the landlord when someone new asks about a listing.
+create or replace function public.notify_landlord_on_inquiry()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_owner uuid;
+  v_title text;
+begin
+  select p.owner_id, p.title into v_owner, v_title
+    from public.properties p where p.id = new.property_id;
+
+  insert into public.notifications (user_id, type, title, body, property_id)
+  values (v_owner, 'inquiry', 'New inquiry',
+          new.name || ' asked about ' || v_title || '.', new.property_id);
+  return new;
+end;
+$$;
+
+drop trigger if exists inquiries_notify_landlord on public.inquiries;
+create trigger inquiries_notify_landlord
+  after insert on public.inquiries
+  for each row execute function public.notify_landlord_on_inquiry();
+
+-- =============================================================================
+-- The paywall
+--
+-- Contact details and the exact map position are removed from the API roles
+-- entirely, so no crafted request can read them. They come back only through
+-- get_property_contact(), which checks for ownership or a paid unlock.
+-- =============================================================================
+revoke select (contact_phone, contact_whatsapp, latitude, longitude)
+  on public.properties from anon, authenticated;
+
+create or replace function public.has_contact_unlock(p_property_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.contact_unlocks u
+     where u.property_id = p_property_id
+       and u.user_id = auth.uid()
+       and u.status = 'paid'
+  );
+$$;
+
+create or replace function public.get_property_contact(p_property_id uuid)
+returns table (
+  unlocked         boolean,
+  contact_phone    text,
+  contact_whatsapp text,
+  latitude         numeric,
+  longitude        numeric
+)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_owner uuid;
+  v_is_public boolean;
+  v_entitled boolean;
+begin
+  select p.owner_id, (p.status = 'published')
+    into v_owner, v_is_public
+    from public.properties p
+   where p.id = p_property_id;
+
+  if v_owner is null then
+    return;
+  end if;
+
+  -- The owner always sees their own; everyone else needs to have paid, and
+  -- only on a listing that is actually public.
+  v_entitled := (v_owner = auth.uid())
+                or (v_is_public and public.has_contact_unlock(p_property_id));
+
+  if not v_entitled then
+    return query select false, null::text, null::text, null::numeric, null::numeric;
+    return;
+  end if;
+
+  return query
+    select true, p.contact_phone, p.contact_whatsapp, p.latitude, p.longitude
+      from public.properties p
+     where p.id = p_property_id;
+end;
+$$;
+
+revoke all on function public.get_property_contact(uuid) from public;
+grant execute on function public.get_property_contact(uuid) to anon, authenticated;
+grant execute on function public.has_contact_unlock(uuid)  to anon, authenticated;
+
+-- Called by the payment webhook once the provider confirms. security definer so
+-- it can flip the row without granting users UPDATE on contact_unlocks.
+create or replace function public.confirm_contact_unlock(
+  p_reference text,
+  p_provider  text default 'paystack'
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_id uuid;
+begin
+  update public.contact_unlocks
+     set status = 'paid', paid_at = now(), provider = p_provider
+   where provider_ref = p_reference
+     and status <> 'paid'
+  returning id into v_id;
+
+  return v_id is not null;
+end;
+$$;
+
+revoke all on function public.confirm_contact_unlock(text, text) from public, anon, authenticated;
+
+-- =============================================================================
+-- Row Level Security
+-- =============================================================================
+alter table public.notifications   enable row level security;
+alter table public.contact_unlocks enable row level security;
+alter table public.tenancies       enable row level security;
+alter table public.partners        enable row level security;
+
+-- Notifications belong to exactly one person.
+drop policy if exists notifications_own on public.notifications;
+create policy notifications_own on public.notifications
+  for select to authenticated using (user_id = auth.uid());
+
+drop policy if exists notifications_update_own on public.notifications;
+create policy notifications_update_own on public.notifications
+  for update to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+drop policy if exists notifications_delete_own on public.notifications;
+create policy notifications_delete_own on public.notifications
+  for delete to authenticated using (user_id = auth.uid());
+
+-- Unlocks: a user may start one for themselves and read their own. Only the
+-- security-definer confirm function may mark one paid.
+drop policy if exists contact_unlocks_select_own on public.contact_unlocks;
+create policy contact_unlocks_select_own on public.contact_unlocks
+  for select to authenticated using (user_id = auth.uid());
+
+drop policy if exists contact_unlocks_insert_own on public.contact_unlocks;
+create policy contact_unlocks_insert_own on public.contact_unlocks
+  for insert to authenticated
+  with check (user_id = auth.uid() and status = 'pending');
+
+-- Tenancies: the tenant and the property's owner can see them.
+drop policy if exists tenancies_select on public.tenancies;
+create policy tenancies_select on public.tenancies
+  for select to authenticated
+  using (tenant_id = auth.uid() or public.owns_property(property_id));
+
+drop policy if exists tenancies_insert_own on public.tenancies;
+create policy tenancies_insert_own on public.tenancies
+  for insert to authenticated
+  with check (tenant_id = auth.uid() and public.property_is_public(property_id));
+
+drop policy if exists tenancies_update on public.tenancies;
+create policy tenancies_update on public.tenancies
+  for update to authenticated
+  using (tenant_id = auth.uid() or public.owns_property(property_id))
+  with check (tenant_id = auth.uid() or public.owns_property(property_id));
+
+-- Partners are a public directory.
+drop policy if exists partners_read on public.partners;
+create policy partners_read on public.partners
+  for select to anon, authenticated using (is_active);
+
+drop policy if exists partners_admin_write on public.partners;
+create policy partners_admin_write on public.partners
+  for all to authenticated
+  using (public.current_role_is(array['admin']::public.user_role[]))
+  with check (public.current_role_is(array['admin']::public.user_role[]));
+
+-- -----------------------------------------------------------------------------
+-- Grants
+-- -----------------------------------------------------------------------------
+grant select                on public.partners       to anon, authenticated;
+grant select, update, delete on public.notifications to authenticated;
+grant select, insert        on public.contact_unlocks to authenticated;
+grant select, insert, update on public.tenancies      to authenticated;
+
+-- =============================================================================
+-- Kheja_Link — 0005_seed_partners_hostels.sql
+--
+--   * the partner directory shown under a listing
+--   * hostel and student-accommodation listings, with photos
+--
+-- Safe to re-run. Run AFTER 0004_marketplace.sql.
+-- =============================================================================
+
+set search_path = public, extensions;
+
+-- -----------------------------------------------------------------------------
+-- Partners
+--
+-- logo_url is deliberately null for every company but our own. The app draws a
+-- styled name tile in its place, so no third-party trademark is reproduced and
+-- nobody is implied to be a partner who has not agreed to be one. Fill in
+-- logo_url once an agreement exists and the tile becomes a real logo with no
+-- code change.
+-- -----------------------------------------------------------------------------
+insert into public.partners
+  (category, slug, name, tagline, brand_color, icon, phone, url, is_ours, sort_order)
+values
+  -- Movers ------------------------------------------------------------------
+  ('movers', 'movement', 'Movement', 'Our own moving service', '#2563EB',
+   'truck', '+254710655709', null, true, 10),
+  ('movers', 'nellions', 'Nellions', 'Household & office moving', '#0F766E',
+   'truck', null, null, false, 20),
+  ('movers', 'moving-solutions', 'Moving Solutions', 'Local moves in Meru', '#B45309',
+   'truck', null, null, false, 30),
+  ('movers', 'superior-movers', 'Superior Movers', 'Packing and transport', '#7C3AED',
+   'truck', null, null, false, 40),
+  ('movers', 'meru-pickups', 'Meru Pickups', 'Affordable pickup hire', '#DC2626',
+   'truck', null, null, false, 50),
+
+  -- Internet ----------------------------------------------------------------
+  ('isp', 'safaricom-home', 'Safaricom Home', 'Fibre & 5G router', '#16A34A',
+   'wifi', null, null, false, 10),
+  ('isp', 'zuku', 'Zuku Fibre', 'Home fibre & TV', '#2563EB',
+   'wifi', null, null, false, 20),
+  ('isp', 'faiba', 'Faiba', 'JTL home fibre', '#EA580C',
+   'wifi', null, null, false, 30),
+  ('isp', 'poa-internet', 'Poa Internet', 'Low-cost home WiFi', '#0891B2',
+   'wifi', null, null, false, 40),
+  ('isp', 'liquid-home', 'Liquid Home', 'Fibre to the home', '#DB2777',
+   'wifi', null, null, false, 50),
+
+  -- Cleaning ----------------------------------------------------------------
+  ('cleaning', 'sparkle-clean', 'Sparkle Clean', 'Move-in deep cleaning', '#0891B2',
+   'sparkles', null, null, false, 10),
+  ('cleaning', 'freshco-cleaners', 'FreshCo Cleaners', 'Homes & offices', '#16A34A',
+   'sparkles', null, null, false, 20),
+  ('cleaning', 'klin-house', 'Klin House', 'Sofa & carpet washing', '#7C3AED',
+   'sparkles', null, null, false, 30),
+  ('cleaning', 'meru-shine', 'Meru Shine', 'Post-construction clean', '#D97706',
+   'sparkles', null, null, false, 40),
+  ('cleaning', 'homecare-ke', 'HomeCare KE', 'Fumigation & sanitising', '#DC2626',
+   'sparkles', null, null, false, 50)
+on conflict (slug) do update
+  set name        = excluded.name,
+      tagline     = excluded.tagline,
+      brand_color = excluded.brand_color,
+      icon        = excluded.icon,
+      category    = excluded.category,
+      sort_order  = excluded.sort_order,
+      is_ours     = excluded.is_ours;
+
+-- -----------------------------------------------------------------------------
+-- Hostels and student accommodation
+--
+-- Photographs are Unsplash, whose licence permits commercial use without
+-- attribution. Replace them with real photographs of the actual rooms before
+-- launch — a listing with someone else's photo is the thing tenants distrust
+-- most.
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_owner uuid;
+  v_type  jsonb;
+  v_loc   jsonb;
+  r       record;
+  v_prop  uuid;
+  v_idx   int;
+  v_url   text;
+begin
+  select id into v_owner from auth.users
+   where email = 'demo.landlord@khejalink.co.ke';
+
+  if v_owner is null then
+    raise notice 'Demo landlord missing — run 0003_seed.sql first. Skipping hostels.';
+    return;
+  end if;
+
+  select jsonb_object_agg(slug, id) into v_type from public.property_types;
+  select jsonb_object_agg(slug, id) into v_loc  from public.locations;
+
+  for r in
+    select * from (values
+      ('must-gate-hostel-block-a', 'MUST Gate Hostel — Block A',
+       'hostel', 'must-area', 6500, 1, 1, 180, false,
+       'Purpose-built student hostel two minutes from the MUST main gate. Single and shared rooms, study desk in every room, communal kitchen, laundry area and a warden on site. Water tank and backup power, so revision nights are never interrupted.',
+       'Nchiru, opposite MUST main gate',
+       array[
+         'https://images.unsplash.com/photo-1555854877-bab0e564b8d5?auto=format&fit=crop&q=80&w=1200',
+         'https://images.unsplash.com/photo-1595526114035-0d45ed16cfbf?auto=format&fit=crop&q=80&w=1200',
+         'https://images.unsplash.com/photo-1522771739844-6a9f6d5f14af?auto=format&fit=crop&q=80&w=1200'
+       ]),
+
+      ('nchiru-scholars-hostel', 'Nchiru Scholars Hostel',
+       'hostel', 'must-area', 5500, 1, 1, 160, false,
+       'Affordable shared hostel rooms for MUST students. Bunk or single beds, shared bathrooms kept clean daily, free WiFi in the common room and a secure gate locked from 10pm. Popular with first years.',
+       'Nchiru, Meru',
+       array[
+         'https://images.unsplash.com/photo-1541123437800-1bb1317badc2?auto=format&fit=crop&q=80&w=1200',
+         'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&q=80&w=1200'
+       ]),
+
+      ('kaaga-girls-hostel', 'Kaaga Ladies Hostel',
+       'hostel', 'kaaga', 7500, 1, 1, 200, false,
+       'Ladies-only hostel in quiet Kaaga with 24-hour security, CCTV on every corridor and a resident matron. Rooms are self-contained with a study nook, and there is a shared kitchen and reading room.',
+       'Kaaga, Meru',
+       array[
+         'https://images.unsplash.com/photo-1598928506311-c55ded91a20c?auto=format&fit=crop&q=80&w=1200',
+         'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?auto=format&fit=crop&q=80&w=1200'
+       ]),
+
+      ('meru-town-executive-hostel', 'Meru Town Executive Hostel',
+       'hostel', 'meru-town', 9000, 1, 1, 240, true,
+       'A step up from the usual student room: private ensuite, fitted study desk, fast fibre WiFi included in the rent, and a rooftop common area. Walking distance to Meru Town college campuses.',
+       'Meru Town, Central',
+       array[
+         'https://images.unsplash.com/photo-1616486338812-3dadae4b4ace?auto=format&fit=crop&q=80&w=1200',
+         'https://images.unsplash.com/photo-1560185007-cde436f6a4d0?auto=format&fit=crop&q=80&w=1200'
+       ]),
+
+      -- A couple of the empty types, so search is not full of dead ends.
+      ('kinoru-modern-studio', 'Kinoru Modern Studio',
+       'studio', 'kinoru', 18000, 1, 1, 480, false,
+       'Bright open-plan studio with a fitted kitchenette, private balcony and plenty of natural light. Ideal for a young professional who wants their own space without an apartment''s cost.',
+       'Kinoru, Meru',
+       array[
+         'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&q=80&w=1200',
+         'https://images.unsplash.com/photo-1493809842364-78817add7ffb?auto=format&fit=crop&q=80&w=1200'
+       ]),
+
+      ('gitoro-family-maisonette', 'Gitoro Family Maisonette',
+       'maisonette', 'gitoro', 55000, 4, 3, 2400, true,
+       'Spacious four-bedroom maisonette in a gated Gitoro court. Master ensuite, downstairs guest room, private garden, double garage and a borehole shared between only six houses.',
+       'Gitoro, Meru',
+       array[
+         'https://images.unsplash.com/photo-1580587771525-78b9dba3b914?auto=format&fit=crop&q=80&w=1200',
+         'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&q=80&w=1200',
+         'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&q=80&w=1200'
+       ])
+    ) as t(slug, title, type_slug, loc_slug, price, beds, baths, sqft, premium,
+           description, address, images)
+  loop
+    insert into public.properties (
+      owner_id, title, slug, description, property_type_id, location_id, address_line,
+      price_amount, price_currency, price_period, deposit_months,
+      bedrooms, bathrooms, size_sqft, is_premium, status, available_from,
+      contact_phone, contact_whatsapp, latitude, longitude, house_rules
+    ) values (
+      v_owner, r.title, r.slug, r.description,
+      (v_type ->> r.type_slug)::uuid,
+      (v_loc  ->> r.loc_slug)::uuid,
+      r.address,
+      r.price, 'KES', 'month', 1,
+      r.beds, r.baths, r.sqft, r.premium, 'published', current_date,
+      '+254710655709', '+254710655709',
+      0.05 + (random() - 0.5) * 0.06,
+      37.65 + (random() - 0.5) * 0.06,
+      case when r.type_slug = 'hostel' then
+        'No overnight guests without signing them in at the gate. Quiet hours 10pm to 6am during term. No cooking in the rooms — use the shared kitchen. Gate locks at 11pm.'
+      else
+        'No loud music after 10pm. Keep shared areas clean. Notify the caretaker before moving furniture in or out.'
+      end
+    )
+    on conflict (slug) do update
+      set title       = excluded.title,
+          description = excluded.description,
+          house_rules = excluded.house_rules,
+          status      = 'published'
+    returning id into v_prop;
+
+    -- Replace the gallery so re-running keeps the photo set correct.
+    delete from public.property_images where property_id = v_prop;
+
+    v_idx := 0;
+    foreach v_url in array r.images loop
+      insert into public.property_images
+        (property_id, public_url, alt_text, is_cover, sort_order)
+      values (v_prop, v_url, r.title, v_idx = 0, v_idx);
+      v_idx := v_idx + 1;
+    end loop;
+
+    insert into public.property_amenities (property_id, amenity_id)
+    select v_prop, a.id
+      from public.amenities a
+     where a.slug in ('water', 'electricity', 'security', 'wifi')
+    on conflict do nothing;
+  end loop;
+end $$;
+
+-- -----------------------------------------------------------------------------
+-- Give the original twelve listings a second and third photo, so the gallery on
+-- the detail page has something to page through.
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  r      record;
+  extras text[] := array[
+    'https://images.unsplash.com/photo-1484154218962-a197022b5858?auto=format&fit=crop&q=80&w=1200',
+    'https://images.unsplash.com/photo-1502005229762-cf1b2da7c5d6?auto=format&fit=crop&q=80&w=1200'
+  ];
+  v_url  text;
+  v_next int;
+begin
+  for r in
+    select p.id
+      from public.properties p
+     where p.status = 'published'
+       and (select count(*) from public.property_images i where i.property_id = p.id) = 1
+  loop
+    select coalesce(max(sort_order), 0) + 1 into v_next
+      from public.property_images where property_id = r.id;
+
+    foreach v_url in array extras loop
+      insert into public.property_images
+        (property_id, public_url, alt_text, is_cover, sort_order)
+      values (r.id, v_url, null, false, v_next);
+      v_next := v_next + 1;
+    end loop;
+  end loop;
+end $$;
+
+-- Exact coordinates for the original listings, so the unlocked map has a pin.
+update public.properties p
+   set latitude  = coalesce(p.latitude,  l.latitude  + (random() - 0.5) * 0.01),
+       longitude = coalesce(p.longitude, l.longitude + (random() - 0.5) * 0.01)
+  from public.locations l
+ where l.id = p.location_id
+   and (p.latitude is null or p.longitude is null);
+
+-- =============================================================================
+-- Kheja_Link — 0006_lock_contact_columns.sql
+--
+-- 0004 tried to hide the contact columns with a column-level REVOKE, which does
+-- nothing on its own: a table-level GRANT SELECT already covers every column,
+-- and revoking a column privilege does not carve a hole in it. Postgres needs
+-- the table grant removed first, then SELECT granted column by column.
+--
+-- After this, contact_phone, contact_whatsapp, latitude and longitude are
+-- unreadable through the API by any role. They come back only through
+-- get_property_contact(), which requires ownership or a paid unlock.
+--
+-- Note this makes `select=*` fail on properties, which is intended — both apps
+-- select explicit column lists.
+--
+-- Safe to re-run. Run AFTER 0004_marketplace.sql.
+-- =============================================================================
+
+set search_path = public, extensions;
+
+-- Drop the blanket grants, including the ineffective column revokes from 0004.
+revoke all privileges on public.properties from anon;
+revoke all privileges on public.properties from authenticated;
+
+-- Everything except contact_phone, contact_whatsapp, latitude, longitude.
+-- search_vector is omitted too: it is an internal index, not content.
+grant select (
+  id, owner_id, title, slug, description,
+  property_type_id, location_id, address_line,
+  price_amount, price_currency, price_period, deposit_months,
+  bedrooms, bathrooms, size_sqft,
+  is_premium, is_furnished, status, available_from,
+  view_count, published_at, created_at, updated_at,
+  like_count, house_rules
+) on public.properties to anon, authenticated;
+
+-- Landlords still need to write the protected columns on their own listings;
+-- Row Level Security decides which rows, this decides which columns.
+grant insert (
+  owner_id, title, slug, description,
+  property_type_id, location_id, address_line,
+  price_amount, price_currency, price_period, deposit_months,
+  bedrooms, bathrooms, size_sqft,
+  is_premium, is_furnished, status, available_from,
+  contact_phone, contact_whatsapp, latitude, longitude, house_rules
+) on public.properties to authenticated;
+
+grant update (
+  title, slug, description,
+  property_type_id, location_id, address_line,
+  price_amount, price_currency, price_period, deposit_months,
+  bedrooms, bathrooms, size_sqft,
+  is_premium, is_furnished, status, available_from,
+  contact_phone, contact_whatsapp, latitude, longitude, house_rules
+) on public.properties to authenticated;
+
+grant delete on public.properties to authenticated;
+
+-- -----------------------------------------------------------------------------
+-- A landlord managing a listing needs to read back what they wrote. RLS already
+-- limits this to rows they own.
+-- -----------------------------------------------------------------------------
+create or replace function public.get_my_property_private(p_property_id uuid)
+returns table (
+  contact_phone    text,
+  contact_whatsapp text,
+  latitude         numeric,
+  longitude        numeric
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select p.contact_phone, p.contact_whatsapp, p.latitude, p.longitude
+    from public.properties p
+   where p.id = p_property_id
+     and p.owner_id = auth.uid();
+$$;
+
+revoke all on function public.get_my_property_private(uuid) from public;
+grant execute on function public.get_my_property_private(uuid) to authenticated;
+
+-- =============================================================================
+-- Kheja_Link — 0007_payment_webhook.sql
+--
+-- Lets the payment webhook confirm an unlock.
+--
+-- confirm_contact_unlock is deliberately unreachable by anon and authenticated:
+-- if a user could call it they could unlock any listing for free. Only the
+-- service role may, and the service role key lives on the server, in the
+-- webhook handler, never in either app.
+--
+-- Safe to re-run.
+-- =============================================================================
+
+set search_path = public, extensions;
+
+grant execute on function public.confirm_contact_unlock(text, text) to service_role;
+
+-- The webhook looks the row up by reference before confirming it.
+grant select, update on public.contact_unlocks to service_role;
+
+-- A pending unlock older than an hour was abandoned at the payment page.
+create or replace function public.expire_stale_unlocks()
+returns integer
+language sql
+security definer
+set search_path = public
+as $$
+  with expired as (
+    update public.contact_unlocks
+       set status = 'failed'
+     where status = 'pending'
+       and created_at < now() - interval '1 hour'
+    returning 1
+  )
+  select count(*)::int from expired;
+$$;
+
+revoke all on function public.expire_stale_unlocks() from public, anon, authenticated;
+grant execute on function public.expire_stale_unlocks() to service_role;
+
+-- =============================================================================
+-- Kheja_Link — 0008_grant_search_vector.sql
+--
+-- 0006 granted SELECT column by column and left search_vector out. Postgres
+-- requires SELECT on a column to *filter* by it as well as to read it, so
+-- full-text search started failing with "permission denied for table
+-- properties".
+--
+-- The column is an internal tsvector, not content, and no query ever asks for
+-- it in a projection — but the grant is needed for the WHERE clause.
+--
+-- Safe to re-run.
+-- =============================================================================
+
+set search_path = public, extensions;
+
+grant select (search_vector) on public.properties to anon, authenticated;
+
+-- =============================================================================
+-- Kheja_Link — 0009_fix_unlock_null_bug.sql
+--
+-- Fixes a hole in get_property_contact().
+--
+-- For a signed-out caller auth.uid() is NULL, so `v_owner = auth.uid()`
+-- evaluated to NULL rather than false. `NULL or false` is NULL, and
+-- `IF NOT NULL THEN` is not taken — so the guard was skipped entirely and the
+-- function fell through to the branch that returns the phone number, the
+-- WhatsApp number and the exact coordinates.
+--
+-- In other words: the KSh 150 paywall was open to anyone not signed in.
+--
+-- Every comparison against auth.uid() is now wrapped in coalesce, and the
+-- entitlement check is explicitly `is not true` so NULL can never pass.
+--
+-- Safe to re-run.
+-- =============================================================================
+
+set search_path = public, extensions;
+
+create or replace function public.get_property_contact(p_property_id uuid)
+returns table (
+  unlocked         boolean,
+  contact_phone    text,
+  contact_whatsapp text,
+  latitude         numeric,
+  longitude        numeric
+)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_owner     uuid;
+  v_is_public boolean;
+  v_entitled  boolean;
+begin
+  select p.owner_id, (p.status = 'published')
+    into v_owner, v_is_public
+    from public.properties p
+   where p.id = p_property_id;
+
+  if v_owner is null then
+    return query select false, null::text, null::text, null::numeric, null::numeric;
+    return;
+  end if;
+
+  -- coalesce everywhere: auth.uid() is NULL for a signed-out caller, and a
+  -- NULL here previously meant "not false", which let the guard be skipped.
+  v_entitled :=
+    coalesce(v_owner = auth.uid(), false)
+    or (
+      coalesce(v_is_public, false)
+      and coalesce(public.has_contact_unlock(p_property_id), false)
+    );
+
+  if v_entitled is not true then
+    return query select false, null::text, null::text, null::numeric, null::numeric;
+    return;
+  end if;
+
+  return query
+    select true, p.contact_phone, p.contact_whatsapp, p.latitude, p.longitude
+      from public.properties p
+     where p.id = p_property_id;
+end;
+$$;
+
+-- has_contact_unlock has the same shape of risk, so pin it to false for anon.
+create or replace function public.has_contact_unlock(p_property_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce((
+    select exists (
+      select 1 from public.contact_unlocks u
+       where u.property_id = p_property_id
+         and u.user_id = auth.uid()
+         and u.status = 'paid'
+    )
+    where auth.uid() is not null
+  ), false);
+$$;
+
+revoke all on function public.get_property_contact(uuid) from public;
+grant execute on function public.get_property_contact(uuid) to anon, authenticated;
+grant execute on function public.has_contact_unlock(uuid)  to anon, authenticated;
+

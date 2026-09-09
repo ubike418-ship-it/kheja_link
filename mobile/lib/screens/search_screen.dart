@@ -41,6 +41,10 @@ class _SearchScreenState extends State<SearchScreen> {
   int _page = 1;
   Timer? _debounce;
 
+  List<SearchSuggestion> _suggestions = const [];
+  bool _showSuggestions = false;
+  final _searchFocus = FocusNode();
+
   // Reference data for the filter sheet, loaded once.
   List<PropertyType> _types = const [];
   List<KhejaLocation> _locations = const [];
@@ -62,6 +66,7 @@ class _SearchScreenState extends State<SearchScreen> {
     _debounce?.cancel();
     _searchController.dispose();
     _scrollController.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -135,16 +140,71 @@ class _SearchScreenState extends State<SearchScreen> {
     await _search();
   }
 
-  /// Debounced so a query runs once the user pauses, not on every keystroke.
+  /// Debounced so nothing fires on every keystroke. Suggestions come back
+  /// quickly; the full search waits until the typing settles.
   void _onQueryChanged(String value) {
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 450), () {
-      final trimmed = value.trim();
+
+    final trimmed = value.trim();
+    if (trimmed.length < 2) {
       setState(() {
-        _filters = _filters.copyWith(query: trimmed.isEmpty ? null : trimmed);
+        _suggestions = const [];
+        _showSuggestions = false;
       });
-      _search(reset: true);
+    }
+
+    _debounce = Timer(const Duration(milliseconds: 280), () async {
+      final hints = await khejaApi.fetchSearchSuggestions(trimmed);
+      if (!mounted) return;
+      setState(() {
+        _suggestions = hints;
+        _showSuggestions = hints.isNotEmpty && _searchFocus.hasFocus;
+      });
     });
+  }
+
+  /// Runs the search for whatever is currently typed.
+  void _submitTyped() {
+    _debounce?.cancel();
+    final trimmed = _searchController.text.trim();
+    setState(() {
+      _filters = _filters.copyWith(query: trimmed.isEmpty ? null : trimmed);
+      _showSuggestions = false;
+    });
+    _searchFocus.unfocus();
+    _search(reset: true);
+  }
+
+  /// Applies a suggestion. An area or a house type becomes a real filter rather
+  /// than a text match, which gives a much better result than the words would.
+  void _applySuggestion(SearchSuggestion suggestion) {
+    _debounce?.cancel();
+    _searchFocus.unfocus();
+    setState(() {
+      _showSuggestions = false;
+      _suggestions = const [];
+    });
+
+    switch (suggestion.kind) {
+      case SuggestionKind.location:
+        _searchController.clear();
+        setState(() => _filters =
+            _filters.copyWith(query: null, locationSlug: suggestion.value));
+        _search(reset: true);
+
+      case SuggestionKind.type:
+        _searchController.clear();
+        setState(() =>
+            _filters = _filters.copyWith(query: null, typeSlug: suggestion.value));
+        _search(reset: true);
+
+      case SuggestionKind.property:
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => PropertyDetailScreen(slug: suggestion.value),
+          ),
+        );
+    }
   }
 
   Future<void> _openFilters() async {
@@ -209,17 +269,12 @@ class _SearchScreenState extends State<SearchScreen> {
                 Expanded(
                   child: TextField(
                     controller: _searchController,
+                    focusNode: _searchFocus,
                     onChanged: _onQueryChanged,
+                    onTap: () => setState(
+                        () => _showSuggestions = _suggestions.isNotEmpty),
                     textInputAction: TextInputAction.search,
-                    onSubmitted: (_) {
-                      _debounce?.cancel();
-                      setState(() {
-                        final trimmed = _searchController.text.trim();
-                        _filters = _filters.copyWith(
-                            query: trimmed.isEmpty ? null : trimmed);
-                      });
-                      _search(reset: true);
-                    },
+                    onSubmitted: (_) => _submitTyped(),
                     decoration: InputDecoration(
                       hintText: 'Homes, areas or house types…',
                       prefixIcon: const Icon(Icons.search_rounded,
@@ -242,6 +297,10 @@ class _SearchScreenState extends State<SearchScreen> {
                 _FilterButton(count: activeCount, onPressed: _openFilters),
               ],
             ),
+          ),
+          if (_showSuggestions) _SuggestionList(
+            suggestions: _suggestions,
+            onPick: _applySuggestion,
           ),
           Expanded(child: _buildResults()),
         ],
@@ -389,6 +448,72 @@ class _FilterButton extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Live suggestions under the search box.
+///
+/// Areas and house types apply as real filters rather than as a text match,
+/// which returns far better results than the words alone would; a listing
+/// title opens that listing directly.
+class _SuggestionList extends StatelessWidget {
+  const _SuggestionList({required this.suggestions, required this.onPick});
+
+  final List<SearchSuggestion> suggestions;
+  final void Function(SearchSuggestion) onPick;
+
+  static IconData _icon(SuggestionKind kind) => switch (kind) {
+        SuggestionKind.location => Icons.place_rounded,
+        SuggestionKind.type => Icons.home_work_rounded,
+        SuggestionKind.property => Icons.article_rounded,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+      constraints: const BoxConstraints(maxHeight: 290),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(KhejaRadius.lg),
+        border: Border.all(color: theme.colorScheme.outline),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.07),
+            blurRadius: 22,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: ListView.separated(
+        shrinkWrap: true,
+        padding: EdgeInsets.zero,
+        itemCount: suggestions.length,
+        separatorBuilder: (_, __) =>
+            Divider(height: 1, color: theme.colorScheme.outline),
+        itemBuilder: (context, i) {
+          final s = suggestions[i];
+          return ListTile(
+            dense: true,
+            onTap: () => onPick(s),
+            leading: Icon(_icon(s.kind), size: 19, color: KhejaColors.blue),
+            title: Text(
+              s.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+            ),
+            trailing: Text(
+              s.hint.toUpperCase(),
+              style: kEyebrowStyle.copyWith(color: KhejaColors.zinc400),
+            ),
+          );
+        },
       ),
     );
   }

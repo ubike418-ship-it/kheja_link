@@ -134,6 +134,13 @@ class _Cover extends StatelessWidget {
                   const _GlassChip(label: 'PREMIUM', background: KhejaColors.amber),
                 ],
                 const Spacer(),
+                if (property.likeCount > 0) ...[
+                  _GlassChip(
+                    label: '${property.likeCount} '
+                        '${property.likeCount == 1 ? "LIKE" : "LIKES"}',
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 if (onToggleFavorite != null)
                   _FavoriteButton(
                     isFavorited: property.isFavorited,

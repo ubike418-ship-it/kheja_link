@@ -22,20 +22,35 @@ type LogoProps = {
 export function LogoMark({ size = 40, className }: { size?: number; className?: string }) {
   return (
     <span
-      className={cn(
-        "relative block shrink-0 overflow-hidden rounded-2xl ring-1 ring-black/5 dark:ring-white/10",
-        className,
-      )}
+      className={cn("relative block shrink-0", className)}
       style={{ width: size, height: size }}
     >
-      <Image
-        src="/khejalink-logo.jpeg"
-        alt=""
-        width={size * 2}
-        height={size * 2}
-        className="h-full w-full object-cover"
-        priority
+      {/* A blurred copy of the mark glowing behind it. The raw asset is a
+          hard-edged photograph and reads as a screenshot without this. */}
+      <span
+        aria-hidden
+        className="absolute -inset-[12%] rounded-[40%] opacity-55 blur-lg pointer-events-none"
+        style={{
+          backgroundImage: "url(/khejalink-logo.jpeg)",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+        }}
       />
+      <span className="relative block h-full w-full overflow-hidden rounded-2xl ring-1 ring-black/5 dark:ring-white/10 shadow-lg shadow-black/20">
+        <Image
+          src="/khejalink-logo.jpeg"
+          alt=""
+          width={size * 2}
+          height={size * 2}
+          className="h-full w-full object-cover blur-[0.3px]"
+          priority
+        />
+        {/* A diagonal sheen, so the tile catches light like a real object. */}
+        <span
+          aria-hidden
+          className="absolute inset-0 bg-gradient-to-br from-white/20 via-white/5 to-transparent"
+        />
+      </span>
     </span>
   );
 }

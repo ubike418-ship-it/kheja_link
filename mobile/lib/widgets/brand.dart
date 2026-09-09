@@ -1,31 +1,126 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 
 import '../config/theme.dart';
 
 /// The Kheja_Link mark.
 ///
-/// The supplied logo is a photograph on a dark ground, so it is always set in a
-/// rounded tile — that keeps it looking deliberate on both the light and dark
-/// themes instead of floating as a dark square.
+/// The supplied logo is a hard-edged photograph on a dark ground. Dropped in
+/// raw it reads as a screenshot, so it is treated: a blurred copy of itself
+/// glows behind the tile, the image is very slightly softened, and a diagonal
+/// sheen runs across it. The result sits in the UI as a designed mark rather
+/// than a pasted picture.
 class LogoMark extends StatelessWidget {
-  const LogoMark({super.key, this.size = 40, this.radius});
+  const LogoMark({
+    super.key,
+    this.size = 40,
+    this.radius,
+    this.blurred = true,
+  });
 
   final double size;
   final double? radius;
 
+  /// Set false for the few places that need the raw asset.
+  final bool blurred;
+
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(radius ?? size * 0.28),
-      child: Image.asset(
+    final corner = radius ?? size * 0.29;
+    // Enough to take the hard pixel edges off without turning it to mush.
+    final softness = (size * 0.006).clamp(0.15, 0.9);
+
+    final tile = ClipRRect(
+      borderRadius: BorderRadius.circular(corner),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (blurred)
+            ImageFiltered(
+              imageFilter: ui.ImageFilter.blur(sigmaX: softness, sigmaY: softness),
+              child: _image(size),
+            )
+          else
+            _image(size),
+
+          // A soft diagonal sheen, so the tile catches light like a real object.
+          if (blurred)
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Colors.white.withValues(alpha: 0.16),
+                    Colors.white.withValues(alpha: 0.02),
+                    Colors.transparent,
+                  ],
+                  stops: const [0, 0.42, 1],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+
+    if (!blurred) {
+      return SizedBox(width: size, height: size, child: tile);
+    }
+
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // The glow: a heavily blurred, scaled copy sitting behind the tile.
+          Positioned(
+            left: -size * 0.08,
+            top: size * 0.02,
+            right: -size * 0.08,
+            bottom: -size * 0.06,
+            child: IgnorePointer(
+              child: Opacity(
+                opacity: 0.55,
+                child: ImageFiltered(
+                  imageFilter: ui.ImageFilter.blur(
+                    sigmaX: size * 0.16,
+                    sigmaY: size * 0.16,
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(corner),
+                    child: _image(size),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(corner),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.28),
+                  blurRadius: size * 0.28,
+                  offset: Offset(0, size * 0.08),
+                ),
+              ],
+            ),
+            child: tile,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _image(double size) => Image.asset(
         'assets/branding/logo.jpeg',
         width: size,
         height: size,
         fit: BoxFit.cover,
-        filterQuality: FilterQuality.medium,
-      ),
-    );
-  }
+        filterQuality: FilterQuality.high,
+      );
 }
 
 /// The full brand lockup artwork (mark + wordmark), for the places with room
@@ -38,19 +133,44 @@ class LogoLockup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(KhejaRadius.lg),
-      child: Image.asset(
-        'assets/branding/lockup.jpeg',
-        width: width,
-        fit: BoxFit.contain,
-        filterQuality: FilterQuality.medium,
-      ),
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        // Same treatment as the mark: a soft bloom so it does not read flat.
+        IgnorePointer(
+          child: Opacity(
+            opacity: 0.5,
+            child: ImageFiltered(
+              imageFilter: ui.ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(KhejaRadius.lg),
+                child: Image.asset(
+                  'assets/branding/lockup.jpeg',
+                  width: width * 0.92,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+          ),
+        ),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(KhejaRadius.lg),
+          child: ImageFiltered(
+            imageFilter: ui.ImageFilter.blur(sigmaX: 0.3, sigmaY: 0.3),
+            child: Image.asset(
+              'assets/branding/lockup.jpeg',
+              width: width,
+              fit: BoxFit.contain,
+              filterQuality: FilterQuality.high,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
 
-/// Mark plus wordmark, as it appears in the web navbar.
+/// Mark plus wordmark, as it appears in the app bar.
 class BrandLockup extends StatelessWidget {
   const BrandLockup({super.key, this.size = 36, this.fontSize = 22});
 

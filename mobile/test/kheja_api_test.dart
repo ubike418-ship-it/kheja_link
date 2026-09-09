@@ -139,6 +139,8 @@ void main() {
     }, skip: configured ? null : 'Supabase credentials not set');
   });
 
+  marketplaceTests(() => api, configured);
+
   group('formatting', () {
     test('rent reads the way the design specifies', () {
       expect(formatPrice(45000), 'KSh 45,000');
@@ -167,4 +169,129 @@ String? _fromEnvFile(String key) {
     }
   }
   return null;
+}
+
+/// A second suite for the marketplace features added in the 1.1 release.
+/// Same rules: real database, anon key, and the paywall must hold.
+void marketplaceTests(KhejaApi Function() apiOf, bool configured) {
+  final skip = configured ? null : 'Supabase credentials not set';
+
+  group('partner directory', () {
+    test('all three rails are populated', () async {
+      final partners = await apiOf().fetchPartners();
+      expect(partners, isNotEmpty);
+
+      for (final category in ['movers', 'isp', 'cleaning']) {
+        expect(
+          partners.where((p) => p.category == category),
+          isNotEmpty,
+          reason: 'the $category rail is empty',
+        );
+      }
+    }, skip: skip);
+
+    test('our own mover is flagged, and third parties carry no logo', () async {
+      final partners = await apiOf().fetchPartners();
+
+      final ours = partners.where((p) => p.isOurs).toList();
+      expect(ours, hasLength(1));
+      expect(ours.first.name, 'Movement');
+
+      // Reproducing another company's trademark would imply a partnership that
+      // does not exist, so those tiles must stay logo-less until agreed.
+      final thirdPartyLogos =
+          partners.where((p) => !p.isOurs && p.logoUrl != null);
+      expect(thirdPartyLogos, isEmpty);
+    }, skip: skip);
+  });
+
+  group('the KSh 150 paywall', () {
+    test('contact details are not readable while locked', () async {
+      final list = await apiOf().fetchProperties();
+      final contact = await apiOf().fetchPropertyContact(list.first.id);
+
+      expect(contact.unlocked, isFalse);
+      expect(contact.phone, isNull);
+      expect(contact.whatsapp, isNull);
+      expect(contact.latitude, isNull);
+      expect(contact.longitude, isNull);
+    }, skip: skip);
+
+    test('the protected columns cannot be selected directly', () async {
+      // The real guarantee: not that the UI hides them, but that the database
+      // refuses to send them at all.
+      for (final column in [
+        'contact_phone',
+        'contact_whatsapp',
+        'latitude',
+        'longitude',
+      ]) {
+        await expectLater(
+          SupabaseClient(
+            Platform.environment['SUPABASE_URL'] ?? _fromEnvFile('SUPABASE_URL')!,
+            Platform.environment['SUPABASE_ANON_KEY'] ??
+                _fromEnvFile('SUPABASE_ANON_KEY')!,
+          ).from('properties').select(column).limit(1),
+          throwsA(isA<PostgrestException>()),
+          reason: '$column is readable by an anonymous caller',
+        );
+      }
+    }, skip: skip);
+
+    test('an unlock cannot be started without signing in', () async {
+      final list = await apiOf().fetchProperties();
+      expect(
+        () => apiOf().startContactUnlock(list.first.id),
+        throwsA(isA<NotSignedInException>()),
+      );
+    }, skip: skip);
+  });
+
+  group('listings', () {
+    test('hostels are listed with photos', () async {
+      final hostels = await apiOf().fetchProperties(
+        filters: const PropertyFilters(typeSlug: 'hostel'),
+      );
+      expect(hostels, isNotEmpty);
+      expect(hostels.every((h) => h.images.isNotEmpty), isTrue);
+    }, skip: skip);
+
+    test('every published listing has at least one photo', () async {
+      final all = await apiOf().fetchProperties(perPage: 48);
+      final missing = all.where((p) => p.images.isEmpty).map((p) => p.title);
+      expect(missing, isEmpty, reason: 'listings with no photo: $missing');
+    }, skip: skip);
+
+    test('like counts come back on the card', () async {
+      final all = await apiOf().fetchProperties();
+      expect(all.every((p) => p.likeCount >= 0), isTrue);
+    }, skip: skip);
+  });
+
+  group('search suggestions', () {
+    test('an area is suggested from a partial word', () async {
+      final hints = await apiOf().fetchSearchSuggestions('maku');
+      expect(hints, isNotEmpty);
+      expect(
+        hints.any((h) => h.kind == SuggestionKind.location && h.label == 'Makutano'),
+        isTrue,
+      );
+    }, skip: skip);
+
+    test('a house type is suggested', () async {
+      final hints = await apiOf().fetchSearchSuggestions('hostel');
+      expect(hints.any((h) => h.kind == SuggestionKind.type), isTrue);
+    }, skip: skip);
+
+    test('a single character suggests nothing', () async {
+      expect(await apiOf().fetchSearchSuggestions('a'), isEmpty);
+    }, skip: skip);
+  });
+
+  group('notifications', () {
+    test('a signed-out visitor sees none', () async {
+      expect(await apiOf().fetchNotifications(), isEmpty);
+      expect(await apiOf().fetchUnreadNotificationCount(), 0);
+    }, skip: skip);
+  });
 }

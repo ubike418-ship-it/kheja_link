@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../config/app_state.dart';
 import '../config/theme.dart';
 import '../main.dart';
 import '../models/models.dart';
@@ -43,6 +44,12 @@ const _categories = <({String id, String label, IconData icon, Color color})>[
     color: Color(0xFFEA580C)
   ),
   (
+    id: 'hostels',
+    label: 'Hostels',
+    icon: Icons.school_rounded,
+    color: Color(0xFF0D9488)
+  ),
+  (
     id: 'shops',
     label: 'Shops',
     icon: Icons.storefront_rounded,
@@ -60,6 +67,7 @@ const _categoryTypeSlug = <String, String>{
   'apartments': 'apartment',
   'bedsitters': 'bedsitter',
   'rooms': 'single_room',
+  'hostels': 'hostel',
   'shops': 'shop',
 };
 
@@ -139,7 +147,13 @@ class _HomeScreenState extends State<HomeScreen> {
             SliverAppBar(
               floating: true,
               titleSpacing: 20,
-              title: const BrandLockup(size: 34, fontSize: 20),
+              // Double tap the brand to flip light/dark. No toggle icon: it
+              // cluttered the bar for something people change twice a year.
+              title: GestureDetector(
+                onDoubleTap: AppState.instance.toggleTheme,
+                behavior: HitTestBehavior.opaque,
+                child: const BrandLockup(size: 34, fontSize: 20),
+              ),
               actions: [
                 IconButton(
                   onPressed: () => _openSearch(),

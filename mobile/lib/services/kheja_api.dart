@@ -12,8 +12,14 @@ class KhejaApi {
 
   final SupabaseClient _client;
 
+  /// Explicit, because contact_phone, contact_whatsapp, latitude and longitude
+  /// are revoked from the API roles — they sit behind the KSh 150 unlock and
+  /// come back only through get_property_contact(). '*' would be denied.
+  static const _propertyColumns =
+      'id, owner_id, title, slug, description, property_type_id, location_id, address_line, price_amount, price_currency, price_period, deposit_months, bedrooms, bathrooms, size_sqft, is_premium, is_furnished, status, available_from, view_count, published_at, created_at, updated_at, like_count, house_rules';
+
   static const _listSelect = '''
-    *,
+    $_propertyColumns,
     property_type:property_types ( id, slug, name, description ),
     location:locations ( id, slug, name, area, county, latitude, longitude ),
     images:property_images ( id, public_url, alt_text, is_cover, sort_order )
@@ -202,6 +208,21 @@ class KhejaApi {
     return rows.map<Property>((r) => Property.fromMap(r)).toList();
   }
 
+  /// Resolves a property id to its slug, for opening a listing from a
+  /// notification (which carries the id, not the slug).
+  Future<String?> fetchPropertySlug(String propertyId) async {
+    try {
+      final row = await _client
+          .from('properties')
+          .select('slug')
+          .eq('id', propertyId)
+          .maybeSingle();
+      return row?['slug'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Analytics should never be able to break a page.
   Future<void> recordView(String propertyId) async {
     try {
@@ -368,6 +389,257 @@ class KhejaApi {
         .delete()
         .eq('id', propertyId)
         .eq('owner_id', user.id);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Contact unlock — the KSh 150 purchase
+  //
+  // The phone number, WhatsApp number and exact map position are revoked from
+  // the API roles entirely. They are not hidden by the UI; the database will
+  // not send them. get_property_contact() returns them only to the owner or to
+  // someone with a paid unlock.
+  // ---------------------------------------------------------------------------
+
+  Future<PropertyContact> fetchPropertyContact(String propertyId) async {
+    try {
+      final rows = await _client
+          .rpc('get_property_contact', params: {'p_property_id': propertyId});
+      if (rows is List && rows.isNotEmpty) {
+        return PropertyContact.fromMap(Map<String, dynamic>.from(rows.first));
+      }
+      return PropertyContact.locked;
+    } catch (_) {
+      return PropertyContact.locked;
+    }
+  }
+
+  Future<bool> hasUnlocked(String propertyId) async {
+    if (!isSignedIn) return false;
+    try {
+      final row = await _client
+          .from('contact_unlocks')
+          .select('id')
+          .eq('property_id', propertyId)
+          .eq('status', 'paid')
+          .maybeSingle();
+      return row != null;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Starts an unlock and returns its reference. The caller then sends the user
+  /// to the payment page; the webhook flips the row to paid.
+  Future<String> startContactUnlock(String propertyId) async {
+    final user = currentUser;
+    if (user == null) throw const NotSignedInException();
+
+    final reference =
+        'kl_${DateTime.now().millisecondsSinceEpoch}_${propertyId.substring(0, 8)}';
+
+    await _client.from('contact_unlocks').insert({
+      'user_id': user.id,
+      'property_id': propertyId,
+      'amount': kUnlockAmount,
+      'currency': kUnlockCurrency,
+      'status': 'pending',
+      'provider': 'paystack',
+      'provider_ref': reference,
+    });
+
+    return reference;
+  }
+
+  /// The listings this person has already paid to unlock.
+  Future<Set<String>> fetchUnlockedPropertyIds() async {
+    if (!isSignedIn) return <String>{};
+    try {
+      final rows = await _client
+          .from('contact_unlocks')
+          .select('property_id')
+          .eq('status', 'paid');
+      return rows.map<String>((r) => r['property_id'] as String).toSet();
+    } catch (_) {
+      return <String>{};
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Notifications — in-app only
+  // ---------------------------------------------------------------------------
+
+  Future<List<KhejaNotification>> fetchNotifications({int limit = 60}) async {
+    if (!isSignedIn) return const [];
+    final rows = await _client
+        .from('notifications')
+        .select()
+        .order('created_at', ascending: false)
+        .limit(limit);
+    return rows.map<KhejaNotification>((r) => KhejaNotification.fromMap(r)).toList();
+  }
+
+  Future<int> fetchUnreadNotificationCount() async {
+    if (!isSignedIn) return 0;
+    try {
+      final rows =
+          await _client.from('notifications').select('id').eq('is_read', false);
+      return rows.length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Future<void> markNotificationRead(String id) async {
+    await _client.from('notifications').update({'is_read': true}).eq('id', id);
+  }
+
+  Future<void> markAllNotificationsRead() async {
+    final user = currentUser;
+    if (user == null) return;
+    await _client
+        .from('notifications')
+        .update({'is_read': true})
+        .eq('user_id', user.id)
+        .eq('is_read', false);
+  }
+
+  Future<void> deleteNotification(String id) async {
+    await _client.from('notifications').delete().eq('id', id);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Partners — movers, internet, cleaning
+  // ---------------------------------------------------------------------------
+
+  Future<List<Partner>> fetchPartners() async {
+    final rows = await _client
+        .from('partners')
+        .select()
+        .eq('is_active', true)
+        .order('category')
+        .order('sort_order');
+    return rows.map<Partner>((r) => Partner.fromMap(r)).toList();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Tenancies — booked, checked in, moved out
+  // ---------------------------------------------------------------------------
+
+  Future<List<Tenancy>> fetchMyTenancies() async {
+    final user = currentUser;
+    if (user == null) return const [];
+    final rows = await _client
+        .from('tenancies')
+        .select('*, property:properties ( id, title, slug )')
+        .eq('tenant_id', user.id)
+        .order('created_at', ascending: false);
+    return rows.map<Tenancy>((r) => Tenancy.fromMap(r)).toList();
+  }
+
+  /// Every tenancy across the signed-in landlord's listings. RLS keeps this to
+  /// properties they own.
+  Future<List<Tenancy>> fetchTenanciesForOwner() async {
+    if (!isSignedIn) return const [];
+    final rows = await _client
+        .from('tenancies')
+        .select('*, property:properties ( id, title, slug )')
+        .order('created_at', ascending: false);
+    return rows.map<Tenancy>((r) => Tenancy.fromMap(r)).toList();
+  }
+
+  Future<Tenancy?> fetchMyTenancyFor(String propertyId) async {
+    final user = currentUser;
+    if (user == null) return null;
+    final row = await _client
+        .from('tenancies')
+        .select('*, property:properties ( id, title, slug )')
+        .eq('property_id', propertyId)
+        .eq('tenant_id', user.id)
+        .inFilter('status', ['booked', 'checked_in'])
+        .maybeSingle();
+    return row == null ? null : Tenancy.fromMap(row);
+  }
+
+  Future<void> bookProperty(String propertyId, {String? note}) async {
+    final user = currentUser;
+    if (user == null) throw const NotSignedInException();
+    await _client.from('tenancies').insert({
+      'property_id': propertyId,
+      'tenant_id': user.id,
+      'status': 'booked',
+      if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+    });
+  }
+
+  Future<void> setTenancyStatus(String tenancyId, String status) async {
+    final patch = <String, dynamic>{'status': status};
+    if (status == 'checked_in') {
+      patch['checked_in_at'] = DateTime.now().toUtc().toIso8601String();
+    }
+    if (status == 'moved_out') {
+      patch['moved_out_at'] = DateTime.now().toUtc().toIso8601String();
+    }
+    await _client.from('tenancies').update(patch).eq('id', tenancyId);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Search suggestions
+  // ---------------------------------------------------------------------------
+
+  /// Areas, house types and listing titles matching what has been typed so far.
+  /// Never throws — an empty list simply means no hints.
+  Future<List<SearchSuggestion>> fetchSearchSuggestions(String term) async {
+    final text = term.trim();
+    if (text.length < 2) return const [];
+
+    try {
+      final results = await Future.wait([
+        _client
+            .from('locations')
+            .select('name, slug')
+            .ilike('name', '%$text%')
+            .limit(4),
+        _client
+            .from('property_types')
+            .select('name, slug')
+            .ilike('name', '%$text%')
+            .limit(4),
+        _client
+            .from('properties')
+            .select('title, slug')
+            .eq('status', 'published')
+            .ilike('title', '%$text%')
+            .limit(5),
+      ]);
+
+      final out = <SearchSuggestion>[];
+
+      for (final row in results[0]) {
+        out.add(SearchSuggestion(
+          label: row['name'] as String,
+          kind: SuggestionKind.location,
+          value: row['slug'] as String,
+        ));
+      }
+      for (final row in results[1]) {
+        out.add(SearchSuggestion(
+          label: row['name'] as String,
+          kind: SuggestionKind.type,
+          value: row['slug'] as String,
+        ));
+      }
+      for (final row in results[2]) {
+        out.add(SearchSuggestion(
+          label: row['title'] as String,
+          kind: SuggestionKind.property,
+          value: row['slug'] as String,
+        ));
+      }
+
+      return out;
+    } catch (_) {
+      return const [];
+    }
   }
 
   // ---------------------------------------------------------------------------

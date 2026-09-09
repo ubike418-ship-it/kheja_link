@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'config/app_state.dart';
 import 'config/supabase_config.dart';
 import 'config/theme.dart';
-import 'screens/app_shell.dart';
+import 'screens/splash_screen.dart';
 import 'services/kheja_api.dart';
 
 /// Single Supabase-backed API instance for the whole app.
@@ -37,15 +38,24 @@ class KhejaApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Kheja_Link',
-      debugShowCheckedModeBanner: false,
-      theme: buildKhejaTheme(Brightness.light),
-      darkTheme: buildKhejaTheme(Brightness.dark),
-      themeMode: ThemeMode.system,
-      home: startupError == null
-          ? const AppShell()
-          : _ConfigErrorScreen(message: startupError!),
+    // Rebuilds the whole app when the light/dark choice changes, which is what
+    // makes the double-tap toggle feel instant.
+    return AnimatedBuilder(
+      animation: AppState.instance,
+      builder: (context, _) {
+        return MaterialApp(
+          title: 'Kheja_Link',
+          debugShowCheckedModeBanner: false,
+          theme: buildKhejaTheme(Brightness.light),
+          darkTheme: buildKhejaTheme(Brightness.dark),
+          // Light or dark only — never "system". You flip it by double-tapping
+          // the home header rather than hunting for a toggle icon.
+          themeMode: AppState.instance.themeMode,
+          home: startupError == null
+              ? const SplashScreen()
+              : _ConfigErrorScreen(message: startupError!),
+        );
+      },
     );
   }
 }
