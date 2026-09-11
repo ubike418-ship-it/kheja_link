@@ -4,14 +4,15 @@ import 'package:permission_handler/permission_handler.dart';
 import '../config/app_state.dart';
 import '../config/theme.dart';
 import '../widgets/brand.dart';
-import 'app_shell.dart';
+import '../widgets/states.dart';
+import 'role_select_screen.dart';
 
-/// Shown once, on first launch, before the app proper.
+/// Shown once, on first launch.
 ///
-/// It explains what each permission buys the user before the system dialog
-/// appears, which is both more honest and markedly better for accept rates
-/// than firing the OS prompt cold. Everything here is optional — declining
-/// leaves the app fully usable.
+/// It explains each permission before Android asks, then really asks — and
+/// reports what happened. In 1.1.x "Allow" did nothing because the permissions
+/// were requested but never declared in the manifest, so Android refused them
+/// silently and this screen moved on without noticing.
 class PermissionsScreen extends StatefulWidget {
   const PermissionsScreen({super.key});
 
@@ -21,33 +22,63 @@ class PermissionsScreen extends StatefulWidget {
 
 class _PermissionsScreenState extends State<PermissionsScreen> {
   bool _busy = false;
+  PermissionStatus? _notification;
+  PermissionStatus? _location;
 
-  Future<void> _continue({required bool ask}) async {
+  Future<void> _requestAll() async {
     setState(() => _busy = true);
 
-    if (ask) {
-      try {
-        // Notifications: for "a home you liked is vacant again".
-        await Permission.notification.request();
-        // Location: only to sort by what is nearest on first open.
-        await Permission.locationWhenInUse.request();
-      } catch (_) {
-        // A device that refuses to even show the dialog is not a reason to
-        // block someone from using the app.
-      }
+    // One at a time: Android shows one system dialog after another, and firing
+    // them together can drop the second one on some devices.
+    final notification = await _safeRequest(Permission.notification);
+    if (!mounted) return;
+    setState(() => _notification = notification);
+
+    final location = await _safeRequest(Permission.locationWhenInUse);
+    if (!mounted) return;
+    setState(() {
+      _location = location;
+      _busy = false;
+    });
+
+    // If either was refused for good, the system dialog will never appear
+    // again — the only way back is the app's settings page, so say so.
+    final blocked = notification.isPermanentlyDenied || location.isPermanentlyDenied;
+    if (blocked) {
+      showKhejaSnack(
+        context,
+        'Some permissions are switched off for Kheja_Link. Turn them on in Settings.',
+      );
+      return;
     }
 
+    await _finish();
+  }
+
+  Future<PermissionStatus> _safeRequest(Permission permission) async {
+    try {
+      final current = await permission.status;
+      if (current.isGranted || current.isLimited) return current;
+      return await permission.request();
+    } catch (_) {
+      return PermissionStatus.denied;
+    }
+  }
+
+  Future<void> _finish() async {
     await AppState.instance.markPermissionsAsked();
     if (!mounted) return;
-
     await Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const AppShell()),
+      MaterialPageRoute(builder: (_) => const RoleSelectScreen()),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final asked = _notification != null || _location != null;
+    final anyBlocked = (_notification?.isPermanentlyDenied ?? false) ||
+        (_location?.isPermanentlyDenied ?? false);
 
     return Scaffold(
       body: SafeArea(
@@ -61,61 +92,71 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
               Text('Two quick things.', style: theme.textTheme.displaySmall),
               const SizedBox(height: 12),
               Text(
-                'Both are optional, and you can change them later in your phone '
-                'settings.',
+                'Both are optional. Tap Allow and your phone will ask you for each '
+                'one in turn.',
                 style: theme.textTheme.bodyLarge?.copyWith(color: KhejaColors.zinc500),
               ),
               const SizedBox(height: 36),
 
-              const _PermissionRow(
+              _PermissionRow(
                 icon: Icons.notifications_active_rounded,
                 color: KhejaColors.blue,
                 title: 'Notifications',
                 body: 'So we can tell you the moment a home you liked becomes '
                     'vacant. Saved homes go fast, and a few hours matters.',
+                status: _notification,
               ),
               const SizedBox(height: 22),
-              const _PermissionRow(
+              _PermissionRow(
                 icon: Icons.place_rounded,
                 color: KhejaColors.emerald,
                 title: 'Location',
                 body: 'So the first homes you see are the ones near you, rather '
                     'than a random corner of Meru.',
+                status: _location,
               ),
 
               const Spacer(),
 
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surface,
-                  borderRadius: BorderRadius.circular(KhejaRadius.lg),
-                  border: Border.all(color: theme.colorScheme.outline),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.lock_outline_rounded,
-                        size: 18, color: KhejaColors.zinc400),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'We never share your location, and notifications stay '
-                        'inside the app.',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: KhejaColors.zinc500,
-                          height: 1.45,
+              if (anyBlocked) ...[
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: KhejaColors.amber.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(KhejaRadius.lg),
+                    border: Border.all(color: KhejaColors.amber.withValues(alpha: 0.35)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.settings_rounded,
+                          size: 18, color: KhejaColors.amber),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Android will not ask again once a permission is refused. '
+                          'Open Settings to turn it on.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: theme.colorScheme.onSurface,
+                            height: 1.45,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 20),
+                const SizedBox(height: 14),
+                OutlinedButton.icon(
+                  onPressed: openAppSettings,
+                  icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                  label: const Text('Open Settings'),
+                ),
+                const SizedBox(height: 10),
+              ],
 
               FilledButton(
-                onPressed: _busy ? null : () => _continue(ask: true),
+                onPressed: _busy ? null : (asked ? _finish : _requestAll),
                 child: _busy
                     ? const SizedBox(
                         width: 20,
@@ -123,17 +164,18 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
                         child: CircularProgressIndicator(
                             strokeWidth: 2, color: Colors.white),
                       )
-                    : const Text('Allow and continue'),
+                    : Text(asked ? 'Continue' : 'Allow'),
               ),
               const SizedBox(height: 10),
-              TextButton(
-                onPressed: _busy ? null : () => _continue(ask: false),
-                style: TextButton.styleFrom(
-                  minimumSize: const Size.fromHeight(48),
-                  foregroundColor: KhejaColors.zinc500,
+              if (!asked)
+                TextButton(
+                  onPressed: _busy ? null : _finish,
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48),
+                    foregroundColor: KhejaColors.zinc500,
+                  ),
+                  child: const Text('Not now'),
                 ),
-                child: const Text('Not now'),
-              ),
             ],
           ),
         ),
@@ -148,15 +190,27 @@ class _PermissionRow extends StatelessWidget {
     required this.color,
     required this.title,
     required this.body,
+    required this.status,
   });
 
   final IconData icon;
   final Color color;
   final String title;
   final String body;
+  final PermissionStatus? status;
 
   @override
   Widget build(BuildContext context) {
+    // Show the real outcome next to each permission, so the user can see that
+    // tapping Allow did something.
+    final (label, labelColor) = switch (status) {
+      null => (null, null),
+      PermissionStatus.granted || PermissionStatus.limited =>
+        ('ALLOWED', KhejaColors.emerald),
+      PermissionStatus.permanentlyDenied => ('BLOCKED', KhejaColors.red),
+      _ => ('NOT ALLOWED', KhejaColors.amber),
+    };
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -174,7 +228,23 @@ class _PermissionRow extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: Theme.of(context).textTheme.titleMedium),
+              Row(
+                children: [
+                  Text(title, style: Theme.of(context).textTheme.titleMedium),
+                  if (label != null) ...[
+                    const SizedBox(width: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: labelColor!.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(label,
+                          style: kEyebrowStyle.copyWith(color: labelColor, fontSize: 9)),
+                    ),
+                  ],
+                ],
+              ),
               const SizedBox(height: 4),
               Text(
                 body,

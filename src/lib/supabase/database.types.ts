@@ -202,6 +202,18 @@ export type Database = {
         Args: { p_property_id: string };
         Returns: undefined;
       };
+      get_my_property_private: {
+        Args: { p_property_id: string };
+        Returns: {
+          contact_phone: string | null;
+          contact_whatsapp: string | null;
+          latitude: number | null;
+          longitude: number | null;
+          landlord_name: string | null;
+          caretaker_name: string | null;
+          caretaker_phone: string | null;
+        }[];
+      };
     };
     Enums: {
       user_role: UserRole;

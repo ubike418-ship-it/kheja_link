@@ -7,6 +7,7 @@ import '../services/kheja_api.dart';
 import '../widgets/brand.dart';
 import '../widgets/property_card.dart';
 import '../widgets/states.dart';
+import 'listing_editor_screen.dart';
 import 'property_detail_screen.dart';
 
 /// A landlord's own listings, in every status. RLS lets an owner see their
@@ -31,6 +32,15 @@ class _MyListingsScreenState extends State<MyListingsScreen> {
     final future = khejaApi.fetchMyProperties();
     setState(() => _future = future);
     await future;
+  }
+
+  Future<void> _openEditor([String? propertyId]) async {
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => ListingEditorScreen(propertyId: propertyId),
+      ),
+    );
+    if (saved == true && mounted) _refresh();
   }
 
   Future<void> _changeStatus(Property property, String status) async {
@@ -85,6 +95,14 @@ class _MyListingsScreenState extends State<MyListingsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('My Listings')),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _openEditor(),
+        backgroundColor: KhejaColors.emerald,
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.add_home_work_rounded),
+        label: const Text('Add property',
+            style: TextStyle(fontWeight: FontWeight.w900)),
+      ),
       body: RefreshIndicator(
         color: KhejaColors.blue,
         onRefresh: _refresh,
@@ -114,9 +132,8 @@ class _MyListingsScreenState extends State<MyListingsScreen> {
                   KhejaEmptyState(
                     icon: Icons.home_work_rounded,
                     title: 'No listings yet',
-                    message: 'Listings you publish from the Kheja_Link website will '
-                        'appear here, where you can take them down, mark them '
-                        'rented or delete them.',
+                    message: 'Tap "Add property" to list your first house. You can '
+                        'edit it, mark it rented or take it down from here.',
                   ),
                 ],
               );
@@ -150,6 +167,7 @@ class _MyListingsScreenState extends State<MyListingsScreen> {
                           )
                       : null,
                   onStatusChanged: (status) => _changeStatus(property, status),
+                  onEdit: () => _openEditor(property.id),
                   onDelete: () => _delete(property),
                 );
               },
@@ -218,12 +236,14 @@ class _ListingRow extends StatelessWidget {
   const _ListingRow({
     required this.property,
     required this.onStatusChanged,
+    required this.onEdit,
     required this.onDelete,
     this.onOpen,
   });
 
   final Property property;
   final ValueChanged<String> onStatusChanged;
+  final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback? onOpen;
 
@@ -334,6 +354,11 @@ class _ListingRow extends StatelessWidget {
                   icon: const Icon(Icons.open_in_new_rounded, size: 20),
                 ),
               ],
+              IconButton(
+                onPressed: onEdit,
+                tooltip: 'Edit listing',
+                icon: const Icon(Icons.edit_rounded, size: 20),
+              ),
               IconButton(
                 onPressed: onDelete,
                 tooltip: 'Delete listing',

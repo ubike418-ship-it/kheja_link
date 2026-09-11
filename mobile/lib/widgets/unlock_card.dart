@@ -105,10 +105,23 @@ class _UnlockCardState extends State<UnlockCard> {
   // ---------------------------------------------------------------------------
   Widget _unlocked(BuildContext context) {
     final c = widget.contact;
-    final phone = c.phone?.replaceAll(RegExp(r'[^\d+]'), '');
-    final whatsapp = (c.whatsapp ?? c.phone)?.replaceAll(RegExp(r'\D'), '');
+    final title = widget.property.title;
+
+    String? digits(String? raw) {
+      final cleaned = raw?.replaceAll(RegExp(r'[^\d+]'), '');
+      if (cleaned == null) return null;
+      return cleaned.replaceAll('+', '').length < 9 ? null : cleaned;
+    }
+
+    final landlordPhone = digits(c.phone);
+    final whatsapp = digits(c.whatsapp) ?? landlordPhone;
+    final caretakerPhone = digits(c.caretakerPhone);
+    final managementPhone = digits(c.managementPhone);
+    final hasCaretaker =
+        caretakerPhone != null || (c.caretakerName?.trim().isNotEmpty ?? false);
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -117,13 +130,13 @@ class _UnlockCardState extends State<UnlockCard> {
             borderRadius: BorderRadius.circular(KhejaRadius.md),
             border: Border.all(color: KhejaColors.emerald.withValues(alpha: 0.3)),
           ),
-          child: Row(
+          child: const Row(
             children: [
-              const Icon(Icons.lock_open_rounded, size: 16, color: KhejaColors.emerald),
-              const SizedBox(width: 10),
+              Icon(Icons.lock_open_rounded, size: 16, color: KhejaColors.emerald),
+              SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'Contact unlocked — yours for good on this home.',
+                  'Unlocked — these details stay yours for this home.',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w800,
@@ -134,62 +147,81 @@ class _UnlockCardState extends State<UnlockCard> {
             ],
           ),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
 
-        if (phone != null && phone.isNotEmpty) ...[
+        // The landlord.
+        _ContactPerson(
+          role: 'LANDLORD',
+          name: c.landlordName ?? 'Landlord',
+          phone: landlordPhone,
+          accent: KhejaColors.blue,
+          icon: Icons.person_rounded,
+          onCall: landlordPhone == null
+              ? null
+              : () => _launch(Uri.parse('tel:$landlordPhone'), 'Could not start a call.'),
+          onText: landlordPhone == null
+              ? null
+              : () => _launch(
+                    Uri.parse('sms:$landlordPhone'),
+                    'Could not open your messages app.',
+                  ),
+          onWhatsApp: whatsapp == null
+              ? null
+              : () => _launch(
+                    Uri.parse(
+                      'https://wa.me/${whatsapp.replaceAll('+', '')}?text='
+                      '${Uri.encodeComponent('Hi, I saw "$title" on Kheja_Link. Is it still available?')}',
+                    ),
+                    'Could not open WhatsApp.',
+                  ),
+        ),
+
+        // The caretaker, if the landlord gave one.
+        if (hasCaretaker) ...[
+          const SizedBox(height: 12),
+          _ContactPerson(
+            role: 'CARETAKER',
+            name: c.caretakerName ?? 'Caretaker',
+            phone: caretakerPhone,
+            accent: KhejaColors.purple,
+            icon: Icons.handyman_rounded,
+            onCall: caretakerPhone == null
+                ? null
+                : () => _launch(Uri.parse('tel:$caretakerPhone'), 'Could not start a call.'),
+            onText: caretakerPhone == null
+                ? null
+                : () => _launch(
+                      Uri.parse('sms:$caretakerPhone'),
+                      'Could not open your messages app.',
+                    ),
+          ),
+        ],
+
+        // Management: the fallback when nobody else picks up.
+        if (managementPhone != null) ...[
+          const SizedBox(height: 12),
+          _ContactPerson(
+            role: 'KHEJA_LINK MANAGEMENT',
+            name: c.managementName ?? 'Kheja_Link Management',
+            phone: managementPhone,
+            accent: KhejaColors.emerald,
+            icon: Icons.support_agent_rounded,
+            note: 'If the landlord or caretaker cannot be reached, call us and we '
+                'will connect you.',
+            onCall: () =>
+                _launch(Uri.parse('tel:$managementPhone'), 'Could not start a call.'),
+            onText: () => _launch(
+              Uri.parse('sms:$managementPhone'),
+              'Could not open your messages app.',
+            ),
+          ),
+        ],
+
+        if (c.hasMap) ...[
+          const SizedBox(height: 14),
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
-              onPressed: () =>
-                  _launch(Uri.parse('tel:$phone'), 'Could not start a call.'),
-              icon: const Icon(Icons.phone_rounded, size: 20),
-              label: Text('Call  $phone'),
-              style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.onSurface,
-                foregroundColor: Theme.of(context).colorScheme.surface,
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: () => _launch(
-                Uri.parse('sms:$phone'),
-                'Could not open your messages app.',
-              ),
-              icon: const Icon(Icons.sms_rounded, size: 20),
-              label: const Text('Send a text'),
-            ),
-          ),
-          const SizedBox(height: 10),
-        ],
-
-        if (whatsapp != null && whatsapp.isNotEmpty) ...[
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: () => _launch(
-                Uri.parse(
-                  'https://wa.me/$whatsapp?text=${Uri.encodeComponent(
-                    'Hi, I saw "${widget.property.title}" on Kheja_Link. '
-                    'Is it still available?',
-                  )}',
-                ),
-                'Could not open WhatsApp.',
-              ),
-              icon: const Icon(Icons.chat_rounded, size: 20),
-              label: const Text('WhatsApp'),
-              style: FilledButton.styleFrom(backgroundColor: KhejaColors.emerald),
-            ),
-          ),
-          const SizedBox(height: 10),
-        ],
-
-        if (c.hasMap)
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
               onPressed: () => _launch(
                 Uri.parse(
                   'https://www.google.com/maps/search/?api=1'
@@ -201,6 +233,7 @@ class _UnlockCardState extends State<UnlockCard> {
               label: const Text('Open exact location in Maps'),
             ),
           ),
+        ],
       ],
     );
   }
@@ -247,7 +280,7 @@ class _UnlockCardState extends State<UnlockCard> {
                     Text('Contact the landlord',
                         style: theme.textTheme.titleMedium),
                     Text(
-                      'Call, text, WhatsApp and the exact map pin',
+                      'Landlord, caretaker, management line and map pin',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -386,6 +419,190 @@ class _BlurredNumber extends StatelessWidget {
           ),
           const Icon(Icons.lock_rounded, size: 16, color: KhejaColors.zinc400),
         ],
+      ),
+    );
+  }
+}
+
+/// One person a tenant can reach once they have unlocked the listing.
+class _ContactPerson extends StatelessWidget {
+  const _ContactPerson({
+    required this.role,
+    required this.name,
+    required this.phone,
+    required this.accent,
+    required this.icon,
+    this.note,
+    this.onCall,
+    this.onText,
+    this.onWhatsApp,
+  });
+
+  final String role;
+  final String name;
+  final String? phone;
+  final Color accent;
+  final IconData icon;
+  final String? note;
+  final VoidCallback? onCall;
+  final VoidCallback? onText;
+  final VoidCallback? onWhatsApp;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(KhejaRadius.lg),
+        border: Border.all(color: accent.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.13),
+                  borderRadius: BorderRadius.circular(KhejaRadius.md),
+                ),
+                child: Icon(icon, size: 22, color: accent),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(role, style: kEyebrowStyle.copyWith(color: accent)),
+                    const SizedBox(height: 2),
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium,
+                    ),
+                    if (phone != null)
+                      SelectableText(
+                        phone!,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.4,
+                        ),
+                      )
+                    else
+                      const Text(
+                        'No number given',
+                        style: TextStyle(fontSize: 13, color: KhejaColors.zinc400),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (note != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              note!,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: KhejaColors.zinc500,
+                height: 1.45,
+              ),
+            ),
+          ],
+          if (onCall != null || onText != null || onWhatsApp != null) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                if (onCall != null)
+                  Expanded(
+                    child: _ActionButton(
+                      icon: Icons.phone_rounded,
+                      label: 'Call',
+                      color: accent,
+                      filled: true,
+                      onTap: onCall!,
+                    ),
+                  ),
+                if (onText != null) ...[
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _ActionButton(
+                      icon: Icons.sms_rounded,
+                      label: 'Text',
+                      color: accent,
+                      onTap: onText!,
+                    ),
+                  ),
+                ],
+                if (onWhatsApp != null) ...[
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _ActionButton(
+                      icon: Icons.chat_rounded,
+                      label: 'WhatsApp',
+                      color: KhejaColors.emerald,
+                      onTap: onWhatsApp!,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ActionButton extends StatelessWidget {
+  const _ActionButton({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+    this.filled = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: filled ? color : color.withValues(alpha: 0.10),
+      borderRadius: BorderRadius.circular(KhejaRadius.sm),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(KhejaRadius.sm),
+        child: SizedBox(
+          height: 44,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 17, color: filled ? Colors.white : color),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                  color: filled ? Colors.white : color,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

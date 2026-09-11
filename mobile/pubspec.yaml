@@ -1,7 +1,7 @@
 name: kheja_link
 description: "Kheja_Link — find your next rental home in Meru, Kenya."
 publish_to: 'none'
-version: 1.1.1+4
+version: 1.2.0+5
 
 environment:
   sdk: ^3.9.0
@@ -30,6 +30,11 @@ dependencies:
   qr_flutter: ^4.1.0
   # Talks to the Kheja_Link server to start a payment.
   http: ^1.2.2
+  # Sorting by distance, and a landlord pinning a listing's exact spot.
+  geolocator: ^13.0.2
+  # Video tours on a listing.
+  video_player: ^2.9.2
+  chewie: ^1.8.5
 
 dev_dependencies:
   flutter_test:

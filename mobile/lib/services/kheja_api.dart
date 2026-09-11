@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/models.dart';
@@ -17,13 +19,14 @@ class KhejaApi {
   /// are revoked from the API roles — they sit behind the KSh 150 unlock and
   /// come back only through get_property_contact(). '*' would be denied.
   static const _propertyColumns =
-      'id, owner_id, title, slug, description, property_type_id, location_id, address_line, price_amount, price_currency, price_period, deposit_months, bedrooms, bathrooms, size_sqft, is_premium, is_furnished, status, available_from, view_count, published_at, created_at, updated_at, like_count, house_rules';
+      'id, owner_id, title, slug, description, property_type_id, location_id, address_line, price_amount, price_currency, price_period, deposit_months, bedrooms, bathrooms, size_sqft, is_premium, is_furnished, status, available_from, view_count, published_at, created_at, updated_at, like_count, house_rules, building_name, floor_number, service_charge, water_billing, water_notes, electricity_billing, parking_spaces, pets_allowed, min_lease_months, notice_months, nearby, security_details, internet_ready, is_gated, has_balcony';
 
   static const _listSelect = '''
     $_propertyColumns,
     property_type:property_types ( id, slug, name, description ),
     location:locations ( id, slug, name, area, county, latitude, longitude ),
-    images:property_images ( id, public_url, alt_text, is_cover, sort_order )
+    images:property_images ( id, public_url, alt_text, is_cover, sort_order ),
+    videos:property_videos ( id, public_url, thumbnail_url, caption, duration_seconds, sort_order )
   ''';
 
   User? get currentUser => _client.auth.currentUser;
@@ -649,6 +652,219 @@ class KhejaApi {
   }
 
   // ---------------------------------------------------------------------------
+  // Landlord: creating and editing listings from the app
+  // ---------------------------------------------------------------------------
+
+  static const _photoBucket = 'property-images';
+  static const _videoBucket = 'property-videos';
+
+  /// 60 MB — matches the bucket limit, so a too-large file is refused here with
+  /// a clear message instead of failing halfway through an upload.
+  static const maxVideoBytes = 60 * 1024 * 1024;
+  static const maxPhotoBytes = 5 * 1024 * 1024;
+
+  /// Uploads a photo into the landlord's own folder and returns its URL.
+  /// Storage policy only allows writes under `<their user id>/`, so a user
+  /// cannot place a file in someone else's folder.
+  Future<String> uploadPropertyPhoto(File file) async {
+    final user = currentUser;
+    if (user == null) throw const NotSignedInException();
+
+    final size = await file.length();
+    if (size > maxPhotoBytes) {
+      throw const UploadTooLargeException('Photos must be 5 MB or smaller.');
+    }
+
+    final ext = _extension(file.path, fallback: 'jpg');
+    final path = '${user.id}/${DateTime.now().millisecondsSinceEpoch}.$ext';
+
+    await KhejaNetwork.run(
+      () => _client.storage.from(_photoBucket).upload(
+            path,
+            file,
+            fileOptions: FileOptions(
+              cacheControl: '31536000',
+              contentType: _mimeFor(ext, isVideo: false),
+            ),
+          ),
+      // Uploads are slow on mobile data; give them room.
+      timeout: const Duration(minutes: 2),
+      attempts: 2,
+    );
+
+    return _client.storage.from(_photoBucket).getPublicUrl(path);
+  }
+
+  /// Uploads a video tour and returns its URL.
+  Future<String> uploadPropertyVideo(File file) async {
+    final user = currentUser;
+    if (user == null) throw const NotSignedInException();
+
+    final size = await file.length();
+    if (size > maxVideoBytes) {
+      throw UploadTooLargeException(
+        'That video is ${(size / 1024 / 1024).toStringAsFixed(0)} MB. Keep tours '
+        'under 60 MB — a minute or two of walking through the house is plenty.',
+      );
+    }
+
+    final ext = _extension(file.path, fallback: 'mp4');
+    final path = '${user.id}/${DateTime.now().millisecondsSinceEpoch}.$ext';
+
+    await _client.storage.from(_videoBucket).upload(
+          path,
+          file,
+          fileOptions: FileOptions(
+            cacheControl: '31536000',
+            contentType: _mimeFor(ext, isVideo: true),
+          ),
+        );
+
+    return _client.storage.from(_videoBucket).getPublicUrl(path);
+  }
+
+  /// Creates a listing and everything attached to it. Returns the new id.
+  Future<String> createProperty(ListingDraft draft) async {
+    final user = currentUser;
+    if (user == null) throw const NotSignedInException();
+
+    final slugBase = draft.title
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+        .replaceAll(RegExp(r'^-+|-+$'), '');
+    final slug =
+        '${slugBase.isEmpty ? 'listing' : slugBase}-${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}';
+
+    final row = await KhejaNetwork.run(() => _client
+        .from('properties')
+        .insert({...draft.toRow(), 'owner_id': user.id, 'slug': slug})
+        .select('id')
+        .single());
+
+    final id = row['id'] as String;
+    await _syncListingMedia(id, draft);
+    return id;
+  }
+
+  Future<void> updateProperty(String propertyId, ListingDraft draft) async {
+    final user = currentUser;
+    if (user == null) throw const NotSignedInException();
+
+    await KhejaNetwork.run(() => _client
+        .from('properties')
+        .update(draft.toRow())
+        .eq('id', propertyId)
+        .eq('owner_id', user.id));
+
+    await _syncListingMedia(propertyId, draft);
+  }
+
+  /// Replaces the photo, video and amenity sets so their order and cover stay
+  /// exactly as the landlord arranged them.
+  Future<void> _syncListingMedia(String propertyId, ListingDraft draft) async {
+    await _client.from('property_images').delete().eq('property_id', propertyId);
+    if (draft.photoUrls.isNotEmpty) {
+      await _client.from('property_images').insert([
+        for (var i = 0; i < draft.photoUrls.length; i++)
+          {
+            'property_id': propertyId,
+            'public_url': draft.photoUrls[i],
+            'storage_path': _storagePath(draft.photoUrls[i], _photoBucket),
+            'is_cover': i == 0,
+            'sort_order': i,
+            'alt_text': draft.title,
+          },
+      ]);
+    }
+
+    await _client.from('property_videos').delete().eq('property_id', propertyId);
+    if (draft.videoUrls.isNotEmpty) {
+      await _client.from('property_videos').insert([
+        for (var i = 0; i < draft.videoUrls.length; i++)
+          {
+            'property_id': propertyId,
+            'public_url': draft.videoUrls[i],
+            'storage_path': _storagePath(draft.videoUrls[i], _videoBucket),
+            'sort_order': i,
+          },
+      ]);
+    }
+
+    await _client.from('property_amenities').delete().eq('property_id', propertyId);
+    if (draft.amenityIds.isNotEmpty) {
+      await _client.from('property_amenities').insert([
+        for (final amenityId in draft.amenityIds)
+          {'property_id': propertyId, 'amenity_id': amenityId},
+      ]);
+    }
+  }
+
+  /// Loads one of the landlord's own listings, including the private fields
+  /// that only the owner and paying tenants may see, ready for editing.
+  Future<ListingDraft?> fetchListingForEdit(String propertyId) async {
+    final user = currentUser;
+    if (user == null) return null;
+
+    final row = await KhejaNetwork.run(() => _client
+        .from('properties')
+        .select('$_listSelect, property_amenities ( amenity_id )')
+        .eq('id', propertyId)
+        .eq('owner_id', user.id)
+        .maybeSingle());
+    if (row == null) return null;
+
+    final property = Property.fromMap(row);
+
+    Map<String, dynamic>? private;
+    try {
+      final rows = await _client
+          .rpc('get_my_property_private', params: {'p_property_id': propertyId});
+      if (rows is List && rows.isNotEmpty) {
+        private = Map<String, dynamic>.from(rows.first);
+      }
+    } catch (_) {
+      private = null;
+    }
+
+    final amenityIds = (row['property_amenities'] as List? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map((a) => a['amenity_id'] as String)
+        .toList();
+
+    return ListingDraft.fromProperty(property, private: private, amenityIds: amenityIds);
+  }
+
+  static String _extension(String path, {required String fallback}) {
+    final dot = path.lastIndexOf('.');
+    if (dot == -1 || dot == path.length - 1) return fallback;
+    final ext = path.substring(dot + 1).toLowerCase();
+    return RegExp(r'^[a-z0-9]{2,5}$').hasMatch(ext) ? ext : fallback;
+  }
+
+  static String _mimeFor(String ext, {required bool isVideo}) {
+    if (isVideo) {
+      return switch (ext) {
+        'mov' => 'video/quicktime',
+        '3gp' => 'video/3gpp',
+        'webm' => 'video/webm',
+        _ => 'video/mp4',
+      };
+    }
+    return switch (ext) {
+      'png' => 'image/png',
+      'webp' => 'image/webp',
+      _ => 'image/jpeg',
+    };
+  }
+
+  /// Recovers the bucket-relative path from a public URL, if it is one of ours.
+  static String? _storagePath(String url, String bucket) {
+    final marker = '/storage/v1/object/public/$bucket/';
+    final i = url.indexOf(marker);
+    return i == -1 ? null : Uri.decodeComponent(url.substring(i + marker.length));
+  }
+
+  // ---------------------------------------------------------------------------
   // Auth
   // ---------------------------------------------------------------------------
 
@@ -687,6 +903,7 @@ class NotSignedInException implements Exception {
 /// Turns a Supabase error into something worth showing a person.
 String describeError(Object error) {
   if (error is NotSignedInException) return 'Sign in to continue.';
+  if (error is UploadTooLargeException) return error.message;
 
   if (error is AuthException) {
     final message = error.message.toLowerCase();
@@ -720,4 +937,11 @@ String describeError(Object error) {
   }
 
   return 'Something went wrong. Please try again.';
+}
+
+class UploadTooLargeException implements Exception {
+  const UploadTooLargeException(this.message);
+  final String message;
+  @override
+  String toString() => message;
 }

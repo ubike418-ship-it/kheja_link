@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import '../config/app_state.dart';
 import '../config/theme.dart';
 import '../widgets/brand.dart';
+import '../main.dart';
 import 'app_shell.dart';
 import 'permissions_screen.dart';
+import 'role_select_screen.dart';
 
 /// The first thing anyone sees: the Kheja_Link mark on the brand's own dark
 /// ground, resolving into the wordmark, then the app.
@@ -64,9 +66,17 @@ class _SplashScreenState extends State<SplashScreen>
 
     if (!mounted) return;
 
-    final next = AppState.instance.permissionsAsked
-        ? const AppShell()
-        : const PermissionsScreen();
+    // First run: permissions, then the tenant/landlord door. After that, a
+    // signed-in person goes straight in (their account decides which app), and
+    // a signed-out one goes back to the door until they have picked a side.
+    final Widget next;
+    if (!AppState.instance.permissionsAsked) {
+      next = const PermissionsScreen();
+    } else if (khejaApi.isSignedIn || AppState.instance.hasChosenRole) {
+      next = const AppShell();
+    } else {
+      next = const RoleSelectScreen();
+    }
 
     await Navigator.of(context).pushReplacement(
       PageRouteBuilder(

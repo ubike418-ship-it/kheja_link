@@ -12,6 +12,7 @@ import '../widgets/property_card.dart';
 import '../widgets/partner_rails.dart';
 import '../widgets/states.dart';
 import '../widgets/unlock_card.dart';
+import '../widgets/video_player_view.dart';
 import 'auth_screen.dart';
 import 'inquiry_sheet.dart';
 
@@ -290,6 +291,9 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                     ),
                   ],
 
+                  const SizedBox(height: 34),
+                  _ListingDetails(property: property),
+
                   if (property.houseRules != null &&
                       property.houseRules!.trim().isNotEmpty) ...[
                     const SizedBox(height: 34),
@@ -406,10 +410,16 @@ class _GallerySliver extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final images = property.images;
+    // Photos first, then video tours, all in one swipeable strip.
+    final items = <GalleryItem>[
+      for (final image in property.images) GalleryItem.photo(image.url),
+      for (final video in property.videos)
+        GalleryItem.video(video.url, thumbnailUrl: video.thumbnailUrl),
+    ];
+    final videoCount = property.videos.length;
 
     return SliverAppBar(
-      expandedHeight: 320,
+      expandedHeight: 340,
       pinned: true,
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       leading: Padding(
@@ -437,27 +447,61 @@ class _GallerySliver extends StatelessWidget {
         background: Stack(
           fit: StackFit.expand,
           children: [
-            if (images.isEmpty)
+            if (items.isEmpty)
               const PropertyImageView(url: null)
             else
               PageView.builder(
                 controller: pageController,
                 onPageChanged: onPageChanged,
-                itemCount: images.length,
-                itemBuilder: (_, index) =>
-                    PropertyImageView(url: images[index].url, width: 900),
+                itemCount: items.length,
+                itemBuilder: (_, index) {
+                  final item = items[index];
+                  return item.isVideo
+                      ? VideoPlayerView(url: item.url, thumbnailUrl: item.thumbnailUrl)
+                      : PropertyImageView(url: item.url, width: 900);
+                },
               ),
-            const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Colors.black38, Colors.transparent],
-                  stops: [0, 0.35],
+            // Top scrim only — a full-height one would darken the video.
+            const IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.black38, Colors.transparent],
+                    stops: [0, 0.3],
+                  ),
                 ),
               ),
             ),
-            if (images.length > 1)
+            // Tell people there is a video to find, before they have swiped.
+            if (videoCount > 0)
+              Positioned(
+                left: 20,
+                bottom: 16,
+                child: IgnorePointer(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: KhejaColors.blue,
+                      borderRadius: BorderRadius.circular(KhejaRadius.sm),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.play_circle_fill_rounded,
+                            size: 14, color: Colors.white),
+                        const SizedBox(width: 6),
+                        Text(
+                          videoCount == 1 ? 'VIDEO TOUR' : '$videoCount VIDEOS',
+                          style: kEyebrowStyle.copyWith(color: Colors.white),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            if (items.length > 1)
               Positioned(
                 bottom: 16,
                 right: 20,
@@ -469,7 +513,7 @@ class _GallerySliver extends StatelessWidget {
                     borderRadius: BorderRadius.circular(KhejaRadius.sm),
                   ),
                   child: Text(
-                    '${imageIndex + 1} / ${images.length}',
+                    '${imageIndex + 1} / ${items.length}',
                     style: kEyebrowStyle.copyWith(color: Colors.white),
                   ),
                 ),
@@ -1015,6 +1059,158 @@ class _TenancyCard extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// Everything a tenant asks before travelling to a viewing: utilities, costs
+/// beyond rent, terms, parking, what is nearby. Only rows the landlord filled
+/// in are shown, so a sparse listing does not look like a list of blanks.
+class _ListingDetails extends StatelessWidget {
+  const _ListingDetails({required this.property});
+
+  final Property property;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final p = property;
+
+    final rows = <({IconData icon, String label, String value})>[
+      if (p.buildingName != null && p.buildingName!.trim().isNotEmpty)
+        (
+          icon: Icons.apartment_rounded,
+          label: 'Building',
+          value: p.floorNumber == null
+              ? p.buildingName!
+              : '${p.buildingName!}, floor ${p.floorNumber}'
+        )
+      else if (p.floorNumber != null)
+        (icon: Icons.stairs_rounded, label: 'Floor', value: '${p.floorNumber}'),
+      if (p.waterLabel != null)
+        (
+          icon: Icons.water_drop_rounded,
+          label: 'Water',
+          value: [p.waterLabel!, if (p.waterNotes?.trim().isNotEmpty ?? false) p.waterNotes!]
+              .join(' — ')
+        ),
+      if (p.electricityLabel != null)
+        (icon: Icons.bolt_rounded, label: 'Electricity', value: p.electricityLabel!),
+      if (p.serviceCharge != null && p.serviceCharge! > 0)
+        (
+          icon: Icons.receipt_long_rounded,
+          label: 'Service charge',
+          value: '${formatPrice(p.serviceCharge!)} a month'
+        ),
+      if (p.minLeaseMonths != null && p.minLeaseMonths! > 0)
+        (
+          icon: Icons.event_note_rounded,
+          label: 'Minimum lease',
+          value: '${p.minLeaseMonths} ${p.minLeaseMonths == 1 ? 'month' : 'months'}'
+        ),
+      if (p.noticeMonths != null && p.noticeMonths! > 0)
+        (
+          icon: Icons.notifications_paused_rounded,
+          label: 'Notice to leave',
+          value: '${p.noticeMonths} ${p.noticeMonths == 1 ? 'month' : 'months'}'
+        ),
+      (
+        icon: Icons.local_parking_rounded,
+        label: 'Parking',
+        value: p.parkingSpaces == 0
+            ? 'None'
+            : '${p.parkingSpaces} ${p.parkingSpaces == 1 ? 'space' : 'spaces'}'
+      ),
+      if (p.securityDetails?.trim().isNotEmpty ?? false)
+        (icon: Icons.shield_rounded, label: 'Security', value: p.securityDetails!),
+      if (p.nearby?.trim().isNotEmpty ?? false)
+        (icon: Icons.near_me_rounded, label: 'Nearby', value: p.nearby!),
+    ];
+
+    final features = <String>[
+      if (p.isFurnished) 'Furnished',
+      if (p.isGated) 'Gated compound',
+      if (p.hasBalcony) 'Balcony',
+      if (p.internetReady) 'Internet ready',
+      p.petsAllowed ? 'Pets allowed' : 'No pets',
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Details', style: theme.textTheme.titleLarge),
+        const SizedBox(height: 14),
+        Container(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(KhejaRadius.xl),
+            border: Border.all(color: theme.colorScheme.outline),
+          ),
+          child: Column(
+            children: [
+              for (var i = 0; i < rows.length; i++) ...[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(rows[i].icon, size: 19, color: KhejaColors.blue),
+                      const SizedBox(width: 14),
+                      SizedBox(
+                        width: 108,
+                        child: Text(
+                          rows[i].label,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: KhejaColors.zinc500,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          rows[i].value,
+                          style: const TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w800,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (i < rows.length - 1)
+                  Divider(height: 1, color: theme.colorScheme.outline),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final f in features)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: (f == 'No pets' ? KhejaColors.zinc400 : KhejaColors.emerald)
+                      .withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(KhejaRadius.sm),
+                ),
+                child: Text(
+                  f,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: f == 'No pets' ? KhejaColors.zinc500 : KhejaColors.emerald,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
     );
   }
 }

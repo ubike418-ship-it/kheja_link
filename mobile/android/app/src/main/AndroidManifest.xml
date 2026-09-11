@@ -6,6 +6,32 @@
          which are very different messages on a patchy mobile connection. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
 
+    <!-- Every permission the app asks for at runtime must ALSO be declared
+         here. Android does not show a dialog for an undeclared permission — it
+         silently reports "denied", which is exactly why "Allow" appeared to do
+         nothing in 1.1.x. -->
+
+    <!-- Android 13+: needed to show the "a home you liked is vacant" alert. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
+    <!-- To sort homes by distance, and to drop a landlord's exact pin. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+
+    <!-- Landlords photographing and filming a listing from the app. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
+    <!-- Pre-Android-13 equivalent of the two READ_MEDIA_* permissions. -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32"/>
+
+    <!-- A camera is useful but not required to install the app. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
+    <uses-feature android:name="android.hardware.location.gps" android:required="false"/>
+
     <application
         android:label="Kheja_Link"
         android:name="${applicationName}"

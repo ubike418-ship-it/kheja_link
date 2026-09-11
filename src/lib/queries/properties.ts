@@ -259,8 +259,23 @@ export async function getMyPropertyById(
   };
   const [normalised] = normaliseImages([raw]);
 
+  // The contact columns are revoked from the API roles (they sit behind the
+  // KSh 150 unlock), so they never arrive on the row above. Without this, the
+  // edit form opened with a blank phone number — and saving it silently wiped
+  // the landlord's real number. The owner reads them back through a function
+  // that checks ownership.
+  const { data: privateRows } = await supabase.rpc("get_my_property_private", {
+    p_property_id: id,
+  });
+  const privateFields = (Array.isArray(privateRows) ? privateRows[0] : null) as {
+    contact_phone: string | null;
+    contact_whatsapp: string | null;
+  } | null;
+
   return {
     ...normalised,
+    contact_phone: privateFields?.contact_phone ?? null,
+    contact_whatsapp: privateFields?.contact_whatsapp ?? null,
     amenity_ids: (raw.property_amenities ?? []).map((a) => a.amenity_id),
   };
 }

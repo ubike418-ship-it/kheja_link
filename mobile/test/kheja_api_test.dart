@@ -145,6 +145,8 @@ void main() {
 
   networkTests();
 
+  release12Tests(() => api, configured);
+
   group('formatting', () {
     test('rent reads the way the design specifies', () {
       expect(formatPrice(45000), 'KSh 45,000');
@@ -194,18 +196,30 @@ void marketplaceTests(KhejaApi Function() apiOf, bool configured) {
       }
     }, skip: skip);
 
-    test('our own mover is flagged, and third parties carry no logo', () async {
+    test('our own mover is flagged, and every logo is self-hosted', () async {
       final partners = await apiOf().fetchPartners();
 
       final ours = partners.where((p) => p.isOurs).toList();
       expect(ours, hasLength(1));
       expect(ours.first.name, 'Movement');
 
-      // Reproducing another company's trademark would imply a partnership that
-      // does not exist, so those tiles must stay logo-less until agreed.
-      final thirdPartyLogos =
-          partners.where((p) => !p.isOurs && p.logoUrl != null);
-      expect(thirdPartyLogos, isEmpty);
+      // Logos must come from our own storage, never hotlinked from the company:
+      // a hotlink breaks the moment they redesign their site.
+      for (final p in partners.where((p) => p.logoUrl != null)) {
+        expect(p.logoUrl, startsWith('https://'));
+        expect(p.logoUrl, contains('/storage/v1/object/public/partner-logos/'),
+            reason: '${p.name} logo is not self-hosted');
+      }
+    }, skip: skip);
+
+    test('none of the placeholder companies remain', () async {
+      final names = (await apiOf().fetchPartners()).map((p) => p.name).toSet();
+      for (final fake in [
+        'Meru Pickups', 'Sparkle Clean', 'FreshCo Cleaners', 'Klin House',
+        'Meru Shine', 'HomeCare KE', 'Moving Solutions', 'Superior Movers',
+      ]) {
+        expect(names, isNot(contains(fake)), reason: '$fake is not a real company');
+      }
     }, skip: skip);
   });
 
@@ -373,6 +387,112 @@ void networkTests() {
         throwsA(isA<StateError>()),
       );
       expect(calls, 1, reason: 'a non-network error should not be retried');
+    });
+  });
+}
+
+/// The 1.2 release: roles, landlord listings, video, and the widened unlock.
+void release12Tests(KhejaApi Function() apiOf, bool configured) {
+  final skip = configured ? null : 'Supabase credentials not set';
+
+  SupabaseClient rawClient() => SupabaseClient(
+        Platform.environment['SUPABASE_URL'] ?? _fromEnvFile('SUPABASE_URL')!,
+        Platform.environment['SUPABASE_ANON_KEY'] ?? _fromEnvFile('SUPABASE_ANON_KEY')!,
+      );
+
+  group('widened unlock stays locked', () {
+    test('a signed-out caller gets every new contact field as null', () async {
+      final list = await apiOf().fetchProperties();
+      final c = await apiOf().fetchPropertyContact(list.first.id);
+
+      expect(c.unlocked, isFalse);
+      expect(c.landlordName, isNull);
+      expect(c.phone, isNull);
+      expect(c.caretakerName, isNull);
+      expect(c.caretakerPhone, isNull);
+      // The management line is behind the same payment.
+      expect(c.managementPhone, isNull);
+      expect(c.managementName, isNull);
+    }, skip: skip);
+
+    test('names and the caretaker number cannot be selected directly', () async {
+      for (final column in ['landlord_name', 'caretaker_name', 'caretaker_phone']) {
+        await expectLater(
+          rawClient().from('properties').select(column).limit(1),
+          throwsA(isA<PostgrestException>()),
+          reason: '$column is readable without paying',
+        );
+      }
+    }, skip: skip);
+
+    test('the management number is not in a readable table', () async {
+      // app_settings has RLS on and no policies: anon must get nothing.
+      final rows = await rawClient().from('app_settings').select().limit(5);
+      expect(rows, isEmpty);
+    }, skip: skip);
+  });
+
+  group('listing detail', () {
+    test('the new public columns come back on a listing', () async {
+      final all = await apiOf().fetchProperties(perPage: 30);
+      expect(all, isNotEmpty);
+      expect(all.any((p) => p.waterBilling != null), isTrue,
+          reason: 'no listing carries water billing');
+      expect(all.any((p) => p.electricityBilling != null), isTrue);
+      expect(all.every((p) => p.parkingSpaces >= 0), isTrue);
+    }, skip: skip);
+
+    test('a listing loads with its videos list, even when empty', () async {
+      final list = await apiOf().fetchProperties();
+      final detail = await apiOf().fetchPropertyBySlug(list.first.slug);
+      expect(detail, isNotNull);
+      expect(detail!.videos, isA<List<PropertyVideo>>());
+    }, skip: skip);
+  });
+
+  group('listing draft', () {
+    test('blank text is stored as NULL, not an empty string', () {
+      final row = (ListingDraft()
+            ..title = 'A tidy two bedroom'
+            ..caretakerName = '   '
+            ..nearby = '')
+          .toRow();
+      expect(row['caretaker_name'], isNull);
+      expect(row['nearby'], isNull);
+      expect(row['title'], 'A tidy two bedroom');
+    });
+
+    test('publishing requires the essentials', () {
+      final missing = ListingDraft().missingForPublish();
+      expect(missing, contains('The rent'));
+      expect(missing, contains('At least one photo'));
+      expect(missing, contains('A contact phone number'));
+    });
+
+    test('a complete draft is ready to publish', () {
+      final draft = ListingDraft()
+        ..title = 'Spacious two bedroom'
+        ..propertyTypeId = 'type'
+        ..locationId = 'loc'
+        ..priceAmount = 25000
+        ..description = 'Bright and quiet, with constant water and a big balcony.'
+        ..contactPhone = '+254712345678'
+        ..photoUrls = ['https://example.com/a.jpg'];
+      expect(draft.missingForPublish(), isEmpty);
+    });
+
+    test('a date is sent as a plain date', () {
+      final row = (ListingDraft()..availableFrom = DateTime(2026, 10, 1)).toRow();
+      expect(row['available_from'], '2026-10-01');
+    });
+  });
+
+  group('gallery', () {
+    test('photos and videos are told apart', () {
+      const photo = GalleryItem.photo('https://example.com/a.jpg');
+      const video = GalleryItem.video('https://example.com/a.mp4');
+      expect(photo.isVideo, isFalse);
+      expect(video.isVideo, isTrue);
     });
   });
 }

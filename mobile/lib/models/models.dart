@@ -224,6 +224,22 @@ class Property {
     this.viewCount = 0,
     this.likeCount = 0,
     this.houseRules,
+    this.buildingName,
+    this.floorNumber,
+    this.serviceCharge,
+    this.waterBilling,
+    this.waterNotes,
+    this.electricityBilling,
+    this.parkingSpaces = 0,
+    this.petsAllowed = false,
+    this.minLeaseMonths,
+    this.noticeMonths,
+    this.nearby,
+    this.securityDetails,
+    this.internetReady = false,
+    this.isGated = false,
+    this.hasBalcony = false,
+    this.videos = const [],
     this.publishedAt,
     this.createdAt,
     this.propertyType,
@@ -258,6 +274,25 @@ class Property {
 
   /// Landlord's rules for the house, shown on the detail page.
   final String? houseRules;
+
+  final String? buildingName;
+  final int? floorNumber;
+  final num? serviceCharge;
+  final String? waterBilling;
+  final String? waterNotes;
+  final String? electricityBilling;
+  final int parkingSpaces;
+  final bool petsAllowed;
+  final int? minLeaseMonths;
+  final int? noticeMonths;
+  final String? nearby;
+  final String? securityDetails;
+  final bool internetReady;
+  final bool isGated;
+  final bool hasBalcony;
+
+  /// Video tours, shown in the same swipeable gallery as the photos.
+  final List<PropertyVideo> videos;
   final DateTime? publishedAt;
   final DateTime? createdAt;
 
@@ -270,6 +305,23 @@ class Property {
   bool isFavorited;
 
   String get typeName => propertyType?.name ?? 'Rental';
+
+  String? get waterLabel => switch (waterBilling) {
+        'included' => 'Included in rent',
+        'metered' => 'Metered, billed separately',
+        'flat_rate' => 'Flat monthly rate',
+        'borehole' => 'Borehole supply',
+        'none' => 'Tenant arranges own',
+        _ => null,
+      };
+
+  String? get electricityLabel => switch (electricityBilling) {
+        'prepaid_token' => 'Prepaid tokens',
+        'postpaid' => 'Postpaid, billed monthly',
+        'included' => 'Included in rent',
+        'shared_meter' => 'Shared meter',
+        _ => null,
+      };
   String get locationLabel => location?.display ?? 'Location on request';
   String get rentLabel => formatRent(priceAmount, pricePeriod, priceCurrency);
   String get priceLabel => formatPrice(priceAmount, priceCurrency);
@@ -288,6 +340,15 @@ class Property {
         return a.sortOrder.compareTo(b.sortOrder);
       });
     return list;
+  }
+
+  static List<PropertyVideo> _videos(dynamic raw) {
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map<String, dynamic>>()
+        .map(PropertyVideo.fromMap)
+        .toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
   }
 
   static List<Amenity> _amenities(dynamic raw) {
@@ -326,6 +387,24 @@ class Property {
       viewCount: _int(map['view_count']),
       likeCount: _int(map['like_count']),
       houseRules: map['house_rules'] as String?,
+      buildingName: map['building_name'] as String?,
+      floorNumber: map['floor_number'] == null ? null : _int(map['floor_number']),
+      serviceCharge:
+          map['service_charge'] == null ? null : _num(map['service_charge']),
+      waterBilling: map['water_billing'] as String?,
+      waterNotes: map['water_notes'] as String?,
+      electricityBilling: map['electricity_billing'] as String?,
+      parkingSpaces: _int(map['parking_spaces']),
+      petsAllowed: map['pets_allowed'] == true,
+      minLeaseMonths:
+          map['min_lease_months'] == null ? null : _int(map['min_lease_months']),
+      noticeMonths: map['notice_months'] == null ? null : _int(map['notice_months']),
+      nearby: map['nearby'] as String?,
+      securityDetails: map['security_details'] as String?,
+      internetReady: map['internet_ready'] == true,
+      isGated: map['is_gated'] == true,
+      hasBalcony: map['has_balcony'] == true,
+      videos: _videos(map['videos']),
       publishedAt: _date(map['published_at']),
       createdAt: _date(map['created_at']),
       propertyType: type is Map<String, dynamic> ? PropertyType.fromMap(type) : null,
@@ -562,15 +641,29 @@ class KhejaNotification {
 class PropertyContact {
   const PropertyContact({
     required this.unlocked,
+    this.landlordName,
     this.phone,
     this.whatsapp,
+    this.caretakerName,
+    this.caretakerPhone,
+    this.managementName,
+    this.managementPhone,
     this.latitude,
     this.longitude,
   });
 
   final bool unlocked;
+  final String? landlordName;
   final String? phone;
   final String? whatsapp;
+  final String? caretakerName;
+  final String? caretakerPhone;
+
+  /// Kheja_Link's own line, for when the landlord and caretaker cannot be
+  /// reached. Released by the same unlock.
+  final String? managementName;
+  final String? managementPhone;
+
   final double? latitude;
   final double? longitude;
 
@@ -580,8 +673,13 @@ class PropertyContact {
 
   factory PropertyContact.fromMap(Map<String, dynamic> map) => PropertyContact(
         unlocked: map['unlocked'] == true,
+        landlordName: map['landlord_name'] as String?,
         phone: map['contact_phone'] as String?,
         whatsapp: map['contact_whatsapp'] as String?,
+        caretakerName: map['caretaker_name'] as String?,
+        caretakerPhone: map['caretaker_phone'] as String?,
+        managementName: map['management_name'] as String?,
+        managementPhone: map['management_phone'] as String?,
         latitude: map['latitude'] == null ? null : _num(map['latitude']).toDouble(),
         longitude: map['longitude'] == null ? null : _num(map['longitude']).toDouble(),
       );
@@ -669,4 +767,225 @@ class SearchSuggestion {
         SuggestionKind.type => 'House type',
         SuggestionKind.property => 'Listing',
       };
+}
+
+/// A video tour of a listing.
+class PropertyVideo {
+  const PropertyVideo({
+    required this.id,
+    required this.url,
+    this.thumbnailUrl,
+    this.caption,
+    this.durationSeconds,
+    this.sortOrder = 0,
+  });
+
+  final String id;
+  final String url;
+  final String? thumbnailUrl;
+  final String? caption;
+  final int? durationSeconds;
+  final int sortOrder;
+
+  factory PropertyVideo.fromMap(Map<String, dynamic> map) => PropertyVideo(
+        id: map['id'] as String,
+        url: map['public_url'] as String,
+        thumbnailUrl: map['thumbnail_url'] as String?,
+        caption: map['caption'] as String?,
+        durationSeconds:
+            map['duration_seconds'] == null ? null : _int(map['duration_seconds']),
+        sortOrder: _int(map['sort_order']),
+      );
+}
+
+/// One swipeable item in the gallery: a photo or a video.
+class GalleryItem {
+  const GalleryItem.photo(this.url) : isVideo = false, thumbnailUrl = null;
+  const GalleryItem.video(this.url, {this.thumbnailUrl}) : isVideo = true;
+
+  final String url;
+  final bool isVideo;
+  final String? thumbnailUrl;
+}
+
+/// Everything a landlord fills in when listing a property.
+///
+/// Kept as one mutable object so the editor can build it up across several
+/// sections and hand it to the API in one go.
+class ListingDraft {
+  ListingDraft();
+
+  // Basics
+  String title = '';
+  String description = '';
+  String? propertyTypeId;
+  String? locationId;
+  String addressLine = '';
+  String buildingName = '';
+  int? floorNumber;
+  String nearby = '';
+
+  // Rent and terms
+  num? priceAmount;
+  String pricePeriod = 'month';
+  int depositMonths = 1;
+  num? serviceCharge;
+  int? minLeaseMonths;
+  int? noticeMonths;
+  DateTime? availableFrom;
+
+  // The home itself
+  int bedrooms = 1;
+  int bathrooms = 1;
+  int? sizeSqft;
+  int parkingSpaces = 0;
+  bool isFurnished = false;
+  bool petsAllowed = false;
+  bool internetReady = false;
+  bool isGated = false;
+  bool hasBalcony = false;
+  bool isPremium = false;
+
+  // Utilities
+  String? waterBilling;
+  String waterNotes = '';
+  String? electricityBilling;
+
+  // Safety and rules
+  String securityDetails = '';
+  String houseRules = '';
+
+  // People — private until a tenant pays to unlock
+  String landlordName = '';
+  String contactPhone = '';
+  String contactWhatsapp = '';
+  String caretakerName = '';
+  String caretakerPhone = '';
+
+  // Where exactly — also private until unlocked
+  double? latitude;
+  double? longitude;
+
+  // Media, already uploaded to storage
+  List<String> photoUrls = [];
+  List<String> videoUrls = [];
+
+  List<String> amenityIds = [];
+
+  String status = 'published';
+
+  static String? _blank(String value) {
+    final t = value.trim();
+    return t.isEmpty ? null : t;
+  }
+
+  /// The row sent to Postgres. Blank text becomes NULL rather than ''.
+  Map<String, dynamic> toRow() => {
+        'title': title.trim(),
+        'description': _blank(description),
+        'property_type_id': propertyTypeId,
+        'location_id': locationId,
+        'address_line': _blank(addressLine),
+        'building_name': _blank(buildingName),
+        'floor_number': floorNumber,
+        'nearby': _blank(nearby),
+        'price_amount': priceAmount,
+        'price_currency': 'KES',
+        'price_period': pricePeriod,
+        'deposit_months': depositMonths,
+        'service_charge': serviceCharge,
+        'min_lease_months': minLeaseMonths,
+        'notice_months': noticeMonths,
+        'available_from': availableFrom?.toIso8601String().substring(0, 10),
+        'bedrooms': bedrooms,
+        'bathrooms': bathrooms,
+        'size_sqft': sizeSqft,
+        'parking_spaces': parkingSpaces,
+        'is_furnished': isFurnished,
+        'pets_allowed': petsAllowed,
+        'internet_ready': internetReady,
+        'is_gated': isGated,
+        'has_balcony': hasBalcony,
+        'is_premium': isPremium,
+        'water_billing': waterBilling,
+        'water_notes': _blank(waterNotes),
+        'electricity_billing': electricityBilling,
+        'security_details': _blank(securityDetails),
+        'house_rules': _blank(houseRules),
+        'landlord_name': _blank(landlordName),
+        'contact_phone': _blank(contactPhone),
+        'contact_whatsapp': _blank(contactWhatsapp),
+        'caretaker_name': _blank(caretakerName),
+        'caretaker_phone': _blank(caretakerPhone),
+        'latitude': latitude,
+        'longitude': longitude,
+        'status': status,
+      };
+
+  /// What still needs filling in before this can be published. Empty means
+  /// ready. Drafts may be saved with gaps; publishing may not.
+  List<String> missingForPublish() => [
+        if (title.trim().length < 6) 'A title of at least 6 characters',
+        if (propertyTypeId == null) 'The property type',
+        if (locationId == null) 'The area',
+        if (priceAmount == null || priceAmount! <= 0) 'The rent',
+        if (description.trim().length < 30) 'A description of at least 30 characters',
+        if (contactPhone.trim().isEmpty) 'A contact phone number',
+        if (photoUrls.isEmpty) 'At least one photo',
+      ];
+
+  factory ListingDraft.fromProperty(
+    Property p, {
+    Map<String, dynamic>? private,
+    List<String> amenityIds = const [],
+  }) {
+    final d = ListingDraft()
+      ..title = p.title
+      ..description = p.description ?? ''
+      ..propertyTypeId = p.propertyType?.id
+      ..locationId = p.location?.id
+      ..addressLine = p.addressLine ?? ''
+      ..buildingName = p.buildingName ?? ''
+      ..floorNumber = p.floorNumber
+      ..nearby = p.nearby ?? ''
+      ..priceAmount = p.priceAmount
+      ..pricePeriod = p.pricePeriod
+      ..depositMonths = p.depositMonths
+      ..serviceCharge = p.serviceCharge
+      ..minLeaseMonths = p.minLeaseMonths
+      ..noticeMonths = p.noticeMonths
+      ..availableFrom = p.availableFrom
+      ..bedrooms = p.bedrooms
+      ..bathrooms = p.bathrooms
+      ..sizeSqft = p.sizeSqft
+      ..parkingSpaces = p.parkingSpaces
+      ..isFurnished = p.isFurnished
+      ..petsAllowed = p.petsAllowed
+      ..internetReady = p.internetReady
+      ..isGated = p.isGated
+      ..hasBalcony = p.hasBalcony
+      ..isPremium = p.isPremium
+      ..waterBilling = p.waterBilling
+      ..waterNotes = p.waterNotes ?? ''
+      ..electricityBilling = p.electricityBilling
+      ..securityDetails = p.securityDetails ?? ''
+      ..houseRules = p.houseRules ?? ''
+      ..photoUrls = p.images.map((i) => i.url).toList()
+      ..videoUrls = p.videos.map((v) => v.url).toList()
+      ..amenityIds = [...amenityIds]
+      ..status = p.status == 'pending' ? 'draft' : p.status;
+
+    if (private != null) {
+      d
+        ..landlordName = (private['landlord_name'] as String?) ?? ''
+        ..contactPhone = (private['contact_phone'] as String?) ?? ''
+        ..contactWhatsapp = (private['contact_whatsapp'] as String?) ?? ''
+        ..caretakerName = (private['caretaker_name'] as String?) ?? ''
+        ..caretakerPhone = (private['caretaker_phone'] as String?) ?? ''
+        ..latitude = private['latitude'] == null ? null : _num(private['latitude']).toDouble()
+        ..longitude =
+            private['longitude'] == null ? null : _num(private['longitude']).toDouble();
+    }
+    return d;
+  }
 }

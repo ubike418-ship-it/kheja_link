@@ -11,11 +11,10 @@ import 'states.dart';
 /// Each rail scrolls horizontally and is sized so roughly three tiles are
 /// visible at once, with the fourth peeking to signal there is more.
 ///
-/// Only our own company carries a logo image. Everyone else is drawn as a
-/// styled name tile in their brand colour, because reproducing a third party's
-/// trademark implies a partnership that does not exist. Fill in `logo_url` in
-/// the partners table once an agreement is in place and the tile becomes a
-/// real logo with no code change.
+/// Each company shows its own logo, fetched from its own site and hosted in
+/// our storage. Where no usable logo exists the tile falls back to the
+/// company's initials in its brand colour. None of these companies is a
+/// Kheja_Link partner, and the disclaimer under the rails says so.
 class PartnerRails extends StatelessWidget {
   const PartnerRails({super.key, required this.partners});
 
@@ -63,8 +62,10 @@ class PartnerRails extends StatelessWidget {
           const SizedBox(height: 26),
         ],
         Text(
-          'These companies are listed for convenience. Kheja_Link does not '
-          'take a cut and is not responsible for their service.',
+          'Movement is our own service. The other companies are independent '
+          'businesses listed for your convenience — Kheja_Link is not affiliated '
+          'with them, takes no commission, and is not responsible for their '
+          'service. Logos belong to their owners.',
           style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w500,
@@ -182,11 +183,21 @@ class _PartnerTile extends StatelessWidget {
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: partner.logoUrl != null
-                    ? CachedNetworkImage(
-                        imageUrl: partner.logoUrl!,
-                        fit: BoxFit.contain,
-                        placeholder: (_, __) => _initialsTile(brand),
-                        errorWidget: (_, __, ___) => _initialsTile(brand),
+                    // Real logos sit on white with breathing room, like an app
+                    // icon. Several companies only publish a small icon, and
+                    // stretching one edge to edge would leave it blurred.
+                    ? ColoredBox(
+                        color: Colors.white,
+                        child: Padding(
+                          padding: EdgeInsets.all(width * 0.18),
+                          child: CachedNetworkImage(
+                            imageUrl: partner.logoUrl!,
+                            fit: BoxFit.contain,
+                            filterQuality: FilterQuality.high,
+                            placeholder: (_, __) => const SizedBox.shrink(),
+                            errorWidget: (_, __, ___) => _initialsTile(brand),
+                          ),
+                        ),
                       )
                     : _initialsTile(brand),
               ),

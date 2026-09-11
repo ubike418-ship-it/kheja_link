@@ -2,6 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 	<dict>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Kheja_Link uses your location to show homes near you first, and lets landlords pin a listing's exact location.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Kheja_Link uses the camera so landlords can photograph and film their listings.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Kheja_Link records sound when a landlord films a video tour of a listing.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Kheja_Link lets landlords add photos and videos of a listing from their library.</string>
+
 		<key>CADisableMinimumFrameDurationOnPhone</key>
 		<true/>
 		<key>CFBundleDevelopmentRegion</key>

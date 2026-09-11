@@ -8,7 +8,9 @@ import '../models/models.dart';
 import '../services/kheja_api.dart';
 import '../widgets/brand.dart';
 import '../widgets/states.dart';
+import '../config/app_state.dart';
 import 'auth_screen.dart';
+import 'role_select_screen.dart';
 import 'my_listings_screen.dart';
 import 'inquiries_screen.dart';
 
@@ -38,7 +40,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _openAuth({bool signUp = false}) async {
     await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => AuthScreen(startOnSignUp: signUp)),
+      MaterialPageRoute(
+        builder: (_) => AuthScreen(
+          role: AppState.instance.chosenRole,
+          startOnSignUp: signUp,
+        ),
+      ),
     );
     if (mounted) _reload();
   }
@@ -68,9 +75,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     if (confirmed != true) return;
     await khejaApi.signOut();
+    await AppState.instance.setChosenRole(null);
     if (!mounted) return;
-    showKhejaSnack(context, 'Signed out.');
-    _reload();
+    // Back to the front door, so the next person picks tenant or landlord.
+    await Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const RoleSelectScreen()),
+      (_) => false,
+    );
   }
 
   @override
@@ -243,50 +254,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
             const SizedBox(height: 28),
-          ] else ...[
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: KhejaColors.blue.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(KhejaRadius.xl),
-                border: Border.all(color: KhejaColors.blue.withValues(alpha: 0.25)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(
-                    children: [
-                      Icon(Icons.vpn_key_rounded, size: 20, color: KhejaColors.blue),
-                      SizedBox(width: 10),
-                      Text(
-                        'Have a house to rent out?',
-                        style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Switch to a landlord account and you can publish listings and '
-                    'manage inquiries right here.',
-                    style: TextStyle(
-                      color: KhejaColors.zinc500,
-                      fontWeight: FontWeight.w600,
-                      height: 1.5,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  FilledButton(
-                    onPressed: () => _becomeLandlord(profile),
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size.fromHeight(48),
-                    ),
-                    child: const Text('Become a landlord'),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 28),
           ],
+
 
           Text('Your details', style: theme.textTheme.titleLarge),
           const SizedBox(height: 14),

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../config/app_state.dart';
 import '../main.dart';
 import '../models/models.dart';
 import 'airbnb_soon_screen.dart';
@@ -34,7 +35,10 @@ class _AppShellState extends State<AppShell> {
 
   List<GlobalKey<NavigatorState>> _navigatorKeys = [];
 
-  bool get _isLandlord => _profile?.isLandlord ?? false;
+  /// Signed in: the account's role decides. Signed out: the door they chose.
+  bool get _isLandlord => khejaApi.isSignedIn
+      ? (_profile?.isLandlord ?? AppState.instance.choseLandlord)
+      : AppState.instance.choseLandlord;
 
   @override
   void initState() {

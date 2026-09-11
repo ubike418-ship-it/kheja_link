@@ -1,20 +1,38 @@
 import 'package:flutter/material.dart';
 
+import '../config/app_state.dart';
 import '../config/theme.dart';
 import '../main.dart';
 import '../services/kheja_api.dart';
 import '../widgets/brand.dart';
 import '../widgets/states.dart';
+import 'app_shell.dart';
+import 'role_select_screen.dart';
 
-/// Sign in and sign up.
+/// Sign in and sign up, for one role at a time.
 ///
-/// The Supabase project requires email confirmation, so a new account does not
-/// get a session immediately — the UI has to say "check your inbox" rather than
-/// pretending the user is signed in.
+/// A tenant and a landlord see different screens with different wording and a
+/// different colour, so nobody is unsure which door they are at. Sign-up
+/// creates the account with that role.
+///
+/// On sign-in the role stored on the account is the source of truth: if a
+/// landlord signs in through the tenant screen they are told so and taken to
+/// the landlord app, rather than being dropped into the wrong interface.
 class AuthScreen extends StatefulWidget {
-  const AuthScreen({super.key, this.startOnSignUp = false});
+  const AuthScreen({
+    super.key,
+    this.role,
+    this.startOnSignUp = false,
+    this.isEntryPoint = false,
+  });
 
+  /// 'seeker' or 'landlord'. Falls back to whatever door was chosen earlier.
+  final String? role;
   final bool startOnSignUp;
+
+  /// True when this is the first screen after choosing a role. On success it
+  /// replaces itself with the app; otherwise it simply pops back.
+  final bool isEntryPoint;
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -32,7 +50,10 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _isBusy = false;
   bool _showPassword = false;
   bool _awaitingConfirmation = false;
-  String _role = 'seeker';
+
+  String get _role => widget.role ?? AppState.instance.chosenRole ?? 'seeker';
+  bool get _isLandlord => _role == 'landlord';
+  Color get _accent => _isLandlord ? KhejaColors.emerald : KhejaColors.blue;
 
   @override
   void dispose() {
@@ -59,6 +80,8 @@ class _AuthScreenState extends State<AuthScreen> {
         );
         if (!mounted) return;
 
+        // Email confirmation is on: there is no session until they click the
+        // link, so say that plainly rather than pretending they are signed in.
         if (response.session == null) {
           setState(() {
             _isBusy = false;
@@ -66,18 +89,68 @@ class _AuthScreenState extends State<AuthScreen> {
           });
           return;
         }
-        Navigator.of(context).pop(true);
+        await _enterApp();
       } else {
         await khejaApi.signIn(email: _email.text, password: _password.text);
         if (!mounted) return;
-        showKhejaSnack(context, 'Welcome back.');
-        Navigator.of(context).pop(true);
+        await _enterApp();
       }
     } catch (error) {
       if (!mounted) return;
       setState(() => _isBusy = false);
       showKhejaSnack(context, describeError(error), isError: true);
     }
+  }
+
+  /// Sends the person to the right app for the account they actually have.
+  Future<void> _enterApp() async {
+    final profile = await khejaApi.fetchProfile();
+    if (!mounted) return;
+
+    final accountRole = (profile?.isLandlord ?? false) ? 'landlord' : 'seeker';
+
+    if (accountRole != _role) {
+      showKhejaSnack(
+        context,
+        accountRole == 'landlord'
+            ? 'This is a landlord account — opening the landlord app.'
+            : 'This is a tenant account — opening the tenant app.',
+      );
+    } else {
+      showKhejaSnack(
+        context,
+        'Welcome${profile?.fullName != null ? ', ${profile!.firstName}' : ''}.',
+      );
+    }
+
+    // The door they used should match the account from now on.
+    await AppState.instance.setChosenRole(accountRole);
+    if (!mounted) return;
+
+    if (widget.isEntryPoint) {
+      await Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const AppShell()),
+        (_) => false,
+      );
+    } else {
+      Navigator.of(context).pop(true);
+    }
+  }
+
+  Future<void> _browseAsGuest() async {
+    await Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const AppShell()),
+      (_) => false,
+    );
+  }
+
+  Future<void> _switchRole() async {
+    await AppState.instance.setChosenRole(null);
+    if (!mounted) return;
+    await Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const RoleSelectScreen()),
+      (_) => false,
+    );
   }
 
   Future<void> _resetPassword() async {
@@ -106,8 +179,8 @@ class _AuthScreenState extends State<AuthScreen> {
         body: KhejaEmptyState(
           icon: Icons.mark_email_read_rounded,
           title: 'Check your email',
-          message: 'We sent a confirmation link to ${_email.text.trim()}. '
-              'Tap it, then come back and sign in.',
+          message: 'We sent a confirmation link to ${_email.text.trim()}. Tap it, '
+              'then come back and sign in as a ${_isLandlord ? 'landlord' : 'tenant'}.',
           actionLabel: 'Back to sign in',
           onAction: () => setState(() {
             _awaitingConfirmation = false;
@@ -118,59 +191,77 @@ class _AuthScreenState extends State<AuthScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(),
+      appBar: AppBar(
+        automaticallyImplyLeading: !widget.isEntryPoint,
+        actions: [
+          if (widget.isEntryPoint)
+            TextButton.icon(
+              onPressed: _isBusy ? null : _switchRole,
+              icon: const Icon(Icons.swap_horiz_rounded, size: 18),
+              label: Text(_isLandlord ? "I'm a tenant" : "I'm a landlord"),
+            ),
+          const SizedBox(width: 8),
+        ],
+      ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
           child: Form(
             key: _formKey,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Center(child: LogoLockup(width: 200)),
-                const SizedBox(height: 24),
+                // Which door this is, unmistakably.
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: _accent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: _accent.withValues(alpha: 0.35)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _isLandlord ? Icons.vpn_key_rounded : Icons.search_rounded,
+                        size: 14,
+                        color: _accent,
+                      ),
+                      const SizedBox(width: 7),
+                      Text(
+                        _isLandlord ? 'LANDLORD' : 'TENANT',
+                        style: kEyebrowStyle.copyWith(color: _accent),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                const LogoMark(size: 56),
+                const SizedBox(height: 22),
                 Text(
-                  _isSignUp ? 'Join Kheja_Link.' : 'Welcome back.',
+                  _isSignUp
+                      ? (_isLandlord ? 'List your property.' : 'Find your home.')
+                      : 'Welcome back.',
                   style: theme.textTheme.displaySmall,
                 ),
                 const SizedBox(height: 10),
                 Text(
                   _isSignUp
-                      ? 'Find your next home, or list one of your own.'
-                      : 'Sign in to pick up where you left off.',
+                      ? (_isLandlord
+                          ? 'Create a landlord account to list houses, add photos and '
+                              'video, and manage tenants.'
+                          : 'Create a tenant account to save homes, get vacancy alerts '
+                              'and unlock landlord contacts.')
+                      : (_isLandlord
+                          ? 'Sign in to manage your listings and tenants.'
+                          : 'Sign in to pick up where you left off.'),
                   style: theme.textTheme.bodyLarge
-                      ?.copyWith(color: KhejaColors.zinc500),
+                      ?.copyWith(color: KhejaColors.zinc500, height: 1.5),
                 ),
                 const SizedBox(height: 30),
 
                 if (_isSignUp) ...[
-                  _Label('I want to'),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _RoleCard(
-                          selected: _role == 'seeker',
-                          icon: Icons.home_rounded,
-                          title: 'Find a house',
-                          subtitle: 'Search and save homes',
-                          onTap: () => setState(() => _role = 'seeker'),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _RoleCard(
-                          selected: _role == 'landlord',
-                          icon: Icons.vpn_key_rounded,
-                          title: 'List a house',
-                          subtitle: 'Rent out my property',
-                          onTap: () => setState(() => _role = 'landlord'),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 22),
-
-                  _Label('Full name'),
+                  _Label(_isLandlord ? 'Your name' : 'Full name'),
                   TextFormField(
                     controller: _fullName,
                     textCapitalization: TextCapitalization.words,
@@ -199,7 +290,8 @@ class _AuthScreenState extends State<AuthScreen> {
                 const SizedBox(height: 18),
 
                 if (_isSignUp) ...[
-                  _Label('Phone (optional)'),
+                  // A landlord's phone is how tenants reach them, so it is required.
+                  _Label(_isLandlord ? 'Phone number' : 'Phone (optional)'),
                   TextFormField(
                     controller: _phone,
                     keyboardType: TextInputType.phone,
@@ -207,9 +299,13 @@ class _AuthScreenState extends State<AuthScreen> {
                         const InputDecoration(hintText: '+254 712 345 678'),
                     validator: (value) {
                       final text = value?.trim() ?? '';
-                      if (text.isEmpty) return null;
+                      if (text.isEmpty) {
+                        return _isLandlord
+                            ? 'Tenants need a number to reach you'
+                            : null;
+                      }
                       final digits = text.replaceAll(RegExp(r'\D'), '');
-                      return digits.length >= 7
+                      return digits.length >= 9
                           ? null
                           : 'Enter a valid phone number';
                     },
@@ -263,7 +359,10 @@ class _AuthScreenState extends State<AuthScreen> {
                     alignment: Alignment.centerLeft,
                     child: TextButton(
                       onPressed: _resetPassword,
-                      style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        foregroundColor: _accent,
+                      ),
                       child: const Text('Forgot your password?'),
                     ),
                   ),
@@ -272,6 +371,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 const SizedBox(height: 26),
                 FilledButton(
                   onPressed: _isBusy ? null : _submit,
+                  style: FilledButton.styleFrom(backgroundColor: _accent),
                   child: _isBusy
                       ? const SizedBox(
                           width: 20,
@@ -279,9 +379,15 @@ class _AuthScreenState extends State<AuthScreen> {
                           child: CircularProgressIndicator(
                               strokeWidth: 2, color: Colors.white),
                         )
-                      : Text(_isSignUp ? 'Create account' : 'Sign in'),
+                      : Text(_isSignUp
+                          ? (_isLandlord
+                              ? 'Create landlord account'
+                              : 'Create tenant account')
+                          : (_isLandlord
+                              ? 'Sign in as landlord'
+                              : 'Sign in as tenant')),
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 16),
 
                 Center(
                   child: TextButton(
@@ -291,13 +397,31 @@ class _AuthScreenState extends State<AuthScreen> {
                               _isSignUp = !_isSignUp;
                               _formKey.currentState?.reset();
                             }),
+                    style: TextButton.styleFrom(foregroundColor: _accent),
                     child: Text(
                       _isSignUp
                           ? 'Already have an account? Sign in'
-                          : 'New to Kheja_Link? Create an account',
+                          : (_isLandlord
+                              ? 'New landlord? Create an account'
+                              : 'New here? Create an account'),
                     ),
                   ),
                 ),
+
+                // Browsing is open to everyone, so a tenant can look before
+                // committing. A landlord has nothing to do without an account.
+                if (widget.isEntryPoint && !_isLandlord) ...[
+                  const SizedBox(height: 4),
+                  Center(
+                    child: TextButton(
+                      onPressed: _isBusy ? null : _browseAsGuest,
+                      style: TextButton.styleFrom(
+                        foregroundColor: KhejaColors.zinc500,
+                      ),
+                      child: const Text('Just browsing — continue without an account'),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -318,71 +442,6 @@ class _Label extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 8),
       child: Text(text.toUpperCase(),
           style: kEyebrowStyle.copyWith(color: KhejaColors.zinc400)),
-    );
-  }
-}
-
-class _RoleCard extends StatelessWidget {
-  const _RoleCard({
-    required this.selected,
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  final bool selected;
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Material(
-      color: selected ? KhejaColors.blue : theme.colorScheme.surface,
-      borderRadius: BorderRadius.circular(KhejaRadius.md),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(KhejaRadius.md),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(KhejaRadius.md),
-            border: Border.all(
-              color: selected ? KhejaColors.blue : theme.colorScheme.outline,
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(icon,
-                  size: 20,
-                  color: selected ? Colors.white : theme.colorScheme.onSurface),
-              const SizedBox(height: 10),
-              Text(
-                title,
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 13,
-                  color: selected ? Colors.white : theme.colorScheme.onSurface,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                subtitle,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: selected ? Colors.white70 : KhejaColors.zinc400,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

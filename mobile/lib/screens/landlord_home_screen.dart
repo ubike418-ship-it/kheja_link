@@ -8,7 +8,9 @@ import '../services/kheja_api.dart';
 import '../widgets/brand.dart';
 import '../widgets/property_card.dart';
 import '../widgets/states.dart';
+import 'auth_screen.dart';
 import 'inquiries_screen.dart';
+import 'listing_editor_screen.dart';
 import 'my_listings_screen.dart';
 import 'notifications_screen.dart';
 import 'property_detail_screen.dart';
@@ -59,6 +61,26 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
+    // Came through the landlord door but has not signed in: everything on this
+    // screen belongs to an account, so ask for one first.
+    if (!khejaApi.isSignedIn) {
+      return Scaffold(
+        body: KhejaEmptyState(
+          icon: Icons.vpn_key_rounded,
+          title: 'Sign in to list property',
+          message: 'Your landlord dashboard shows your listings, who has booked, '
+              'and who has asked about each house.',
+          actionLabel: 'Sign in as landlord',
+          onAction: () async {
+            await Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AuthScreen(role: 'landlord')),
+            );
+            if (mounted) _refresh();
+          },
+        ),
+      );
+    }
 
     return Scaffold(
       body: RefreshIndicator(
@@ -149,12 +171,26 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
                 const SizedBox(height: 8),
                 Text(
                   data.properties.isEmpty
-                      ? 'You have no listings yet. Add your first house from the '
-                          'website and manage everything here.'
+                      ? 'You have no listings yet. Add your first property below — '
+                          'it goes live for tenants the moment you publish.'
                       : 'Here is what is happening across your ${data.properties.length} '
                           '${data.properties.length == 1 ? "listing" : "listings"}.',
                   style: theme.textTheme.bodyLarge
                       ?.copyWith(color: KhejaColors.zinc500),
+                ),
+                const SizedBox(height: 20),
+
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _addProperty,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: KhejaColors.emerald,
+                      minimumSize: const Size.fromHeight(58),
+                    ),
+                    icon: const Icon(Icons.add_home_work_rounded, size: 22),
+                    label: const Text('Add a property'),
+                  ),
                 ),
                 const SizedBox(height: 26),
 
@@ -248,8 +284,8 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
                 if (data.properties.isEmpty)
                   _EmptyPanel(
                     icon: Icons.home_work_outlined,
-                    text: 'Add your first house on the Kheja_Link website and it '
-                        'will appear here straight away.',
+                    text: 'Nothing listed yet. Tap "Add a property" above — photos, '
+                        'a video tour and the details tenants ask about.',
                   )
                 else
                   ...data.properties.take(3).map(
@@ -273,6 +309,13 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _addProperty() async {
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const ListingEditorScreen()),
+    );
+    if (saved == true && mounted) _refresh();
   }
 
   void _openListings() {
