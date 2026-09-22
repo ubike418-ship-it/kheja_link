@@ -5,7 +5,9 @@ import '../config/theme.dart';
 import '../main.dart';
 import '../models/models.dart';
 import '../services/kheja_api.dart';
+import '../screens/payment_sheet.dart';
 import '../services/payments.dart';
+import 'kheja_sheet.dart';
 import 'states.dart';
 
 /// The KSh 150 contact unlock.
@@ -13,6 +15,9 @@ import 'states.dart';
 /// While locked, the phone number, WhatsApp and exact map position genuinely
 /// do not exist on the client — the database refuses to send them. This widget
 /// is a storefront for that fact, not the thing enforcing it.
+///
+/// Paying happens in Kheja_Link's own payment screen: the tenant enters their
+/// M-Pesa number and approves the prompt without leaving the app.
 class UnlockCard extends StatefulWidget {
   const UnlockCard({
     super.key,
@@ -53,38 +58,46 @@ class _UnlockCardState extends State<UnlockCard> {
 
     setState(() => _busy = true);
 
-    try {
-      final result = await KhejaPayments.startUnlock(widget.property);
-
+    // Already paid for (perhaps on another device)? Nothing to buy.
+    if (await khejaApi.hasUnlocked(widget.property.id)) {
       if (!mounted) return;
+      setState(() => _busy = false);
+      await widget.onUnlocked();
+      return;
+    }
 
-      switch (result.kind) {
-        case UnlockResultKind.unlocked:
-          // Demo mode, or an unlock that was already paid for.
-          setState(() => _busy = false);
-          showKhejaSnack(context, 'Unlocked. The landlord\'s details are below.');
-          await widget.onUnlocked();
-
-        case UnlockResultKind.checkout:
-          setState(() {
-            _busy = false;
-            _awaitingReturn = true;
-          });
-          await _launch(
-            Uri.parse(result.checkoutUrl!),
-            'Could not open the payment page.',
-          );
-
-        case UnlockResultKind.failed:
-          setState(() => _busy = false);
-          showKhejaSnack(context, result.message ?? 'Could not start the payment.',
-              isError: true);
-      }
+    final String reference;
+    try {
+      reference = await khejaApi.startContactUnlock(widget.property.id);
     } catch (error) {
       if (!mounted) return;
       setState(() => _busy = false);
       showKhejaSnack(context, describeError(error), isError: true);
+      return;
     }
+
+    if (!mounted) return;
+    setState(() => _busy = false);
+
+    final paid = await showKhejaSheet<bool>(
+      context,
+      PaymentSheet(
+        reference: reference,
+        amountLabel: formatPrice(kUnlockAmount),
+        title: 'Unlock contact details',
+        what: 'The landlord, caretaker and exact location for '
+            '"${widget.property.title}".',
+        cardCheckoutUrl: () => KhejaCheckout.cardCheckoutUrl(reference),
+      ),
+    );
+
+    if (!mounted) return;
+    if (paid == true) {
+      showKhejaSnack(context, 'Unlocked. The details are below.');
+    } else {
+      setState(() => _awaitingReturn = true);
+    }
+    await widget.onUnlocked();
   }
 
   Future<void> _recheck() async {

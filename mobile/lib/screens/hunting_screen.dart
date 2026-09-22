@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../config/theme.dart';
 import '../main.dart';
@@ -7,16 +6,19 @@ import '../models/models.dart';
 import '../services/kheja_api.dart';
 import '../services/payments.dart';
 import '../widgets/brand.dart';
+import '../widgets/kheja_sheet.dart';
 import '../widgets/states.dart';
 import 'auth_screen.dart';
+import 'payment_sheet.dart';
 
 /// The KES 500 house hunting fee: what it is, what it is not, and paying it.
 ///
 /// Also the last screen of the tenant tutorial ([isOnboarding]), where it
 /// ends in "Continue" rather than being a page you navigate back from.
 ///
-/// The fee is only ever marked paid by the Paystack webhook. This screen just
-/// re-reads the status — on return from the checkout, and on request.
+/// Paying happens in Kheja_Link's own payment screen ([PaymentSheet]). The fee
+/// is only ever marked paid after the server hears it from Paystack, so this
+/// screen only ever reflects a status it was given.
 class HuntingScreen extends StatefulWidget {
   const HuntingScreen({super.key, this.isOnboarding = false});
 
@@ -31,7 +33,6 @@ class _HuntingScreenState extends State<HuntingScreen> with WidgetsBindingObserv
   HuntingService _service = HuntingService.none;
   bool _loading = true;
   bool _paying = false;
-  bool _awaitingReturn = false;
   String? _loadError;
 
   @override
@@ -53,8 +54,8 @@ class _HuntingScreenState extends State<HuntingScreen> with WidgetsBindingObserv
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Back from the browser checkout: see whether the webhook has landed.
-    if (state == AppLifecycleState.resumed && _awaitingReturn) _load(quiet: true);
+    // Back from a card page: see whether the payment has landed.
+    if (state == AppLifecycleState.resumed && _service.isPending) _load(quiet: true);
   }
 
   Future<void> _load({bool quiet = false}) async {
@@ -68,13 +69,12 @@ class _HuntingScreenState extends State<HuntingScreen> with WidgetsBindingObserv
       error = describeError(e);
     }
     if (!mounted) return;
-    final justActivated = !_service.isActive && service.isActive && _awaitingReturn;
+    final justActivated = !_service.isActive && service.isActive;
     setState(() {
       _settings = settings;
       _service = service;
       _loading = false;
       _loadError = khejaApi.isSignedIn ? error : null;
-      if (service.isActive) _awaitingReturn = false;
     });
     if (justActivated) {
       showKhejaSnack(context, 'Payment received. Your House Hunting service is active.');
@@ -92,27 +92,42 @@ class _HuntingScreenState extends State<HuntingScreen> with WidgetsBindingObserv
     }
 
     setState(() => _paying = true);
-    final result = await KhejaPayments.startHuntingFee();
+
+    // The database creates the pending payment and prices it; the app never
+    // sends an amount.
+    final ({String reference, num amount, String currency})? started;
+    try {
+      started = await khejaApi.startHuntingPayment();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _paying = false);
+      showKhejaSnack(context, describeError(error), isError: true);
+      return;
+    }
     if (!mounted) return;
     setState(() => _paying = false);
 
-    switch (result.kind) {
-      case HuntingPaymentKind.active:
-        showKhejaSnack(context, result.message ?? 'Your House Hunting service is active.');
-        await _load(quiet: true);
-      case HuntingPaymentKind.checkout:
-        setState(() => _awaitingReturn = true);
-        final ok = await launchUrl(
-          Uri.parse(result.checkoutUrl!),
-          mode: LaunchMode.externalApplication,
-        );
-        if (!ok && mounted) {
-          showKhejaSnack(context, 'Could not open the payment page.', isError: true);
-        }
-      case HuntingPaymentKind.failed:
-        showKhejaSnack(context, result.message ?? 'Could not start the payment.',
-            isError: true);
-        await _load(quiet: true);
+    if (started == null) {
+      showKhejaSnack(context, 'Your House Hunting service is already active.');
+      await _load(quiet: true);
+      return;
+    }
+
+    final paid = await showKhejaSheet<bool>(
+      context,
+      PaymentSheet(
+        reference: started.reference,
+        amountLabel: formatPrice(started.amount, started.currency),
+        title: 'House hunting fee',
+        what: 'Kheja_Link house hunting service — separate from rent and deposit.',
+        cardCheckoutUrl: () => KhejaCheckout.cardCheckoutUrl(started!.reference),
+      ),
+    );
+
+    if (!mounted) return;
+    await _load(quiet: true);
+    if (paid == true && mounted) {
+      showKhejaSnack(context, 'Payment received. Your House Hunting service is active.');
     }
   }
 
@@ -239,7 +254,7 @@ class _HuntingScreenState extends State<HuntingScreen> with WidgetsBindingObserv
                   ),
                 ),
               ),
-              if (_awaitingReturn || _service.isPending) ...[
+              if (_service.isPending) ...[
                 const SizedBox(height: 10),
                 SizedBox(
                   width: double.infinity,

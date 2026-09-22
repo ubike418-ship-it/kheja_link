@@ -19,9 +19,9 @@ See [`mobile/README.md`](mobile/README.md) for the Flutter app.
 
 ### Download the Android app
 
-**[Download Kheja_Link for Android](https://github.com/ubike418-ship-it/kheja_link/releases/download/v1.3.1/app-arm64-v8a-release.apk)** (27 MB) — works on almost every phone from the last several years.
+**[Download Kheja_Link for Android](https://github.com/ubike418-ship-it/kheja_link/releases/download/v1.4.0/app-arm64-v8a-release.apk)** (27 MB) — works on almost every phone from the last several years.
 
-Older 32-bit devices want [this build](https://github.com/ubike418-ship-it/kheja_link/releases/download/v1.3.1/app-armeabi-v7a-release.apk) instead, and all builds are listed on the [releases page](https://github.com/ubike418-ship-it/kheja_link/releases/latest).
+Older 32-bit devices want [this build](https://github.com/ubike418-ship-it/kheja_link/releases/download/v1.4.0/app-armeabi-v7a-release.apk) instead, and all builds are listed on the [releases page](https://github.com/ubike418-ship-it/kheja_link/releases/latest).
 
 ---
 
@@ -151,8 +151,8 @@ Level Security enabled, so a forged request cannot read or write what it should 
 
 [`supabase/migrations/0012_hunting_availability_requests.sql`](supabase/migrations/0012_hunting_availability_requests.sql)
 adds the KES 500 house hunting fee, property availability and vacancy dates, "notify me"
-subscriptions, house requests, notification preferences, the Stays waitlist, and manual
-approval for service providers. **All notifications are in-app** (the Inbox tab); Kheja_Link
+subscriptions, house requests, notification preferences, the Stays waitlist, manual approval
+for service providers, and (with `0014_payment_charges.sql`) in-app M-Pesa payments. **All notifications are in-app** (the Inbox tab); Kheja_Link
 sends no email or SMS — see `0013_in_app_notifications_only.sql`.
 
 > **Run the migration before deploying this code.** Both apps now select the new
@@ -165,8 +165,38 @@ label and optional end date, `stays_enabled` (false), `service_provider_registra
 (false) and more. How each hunting fee is split is in `fee_allocations` (100% platform until
 agreed otherwise); every confirmed payment records the split in force at the time.
 
-**Payments** reuse the Paystack route and webhook. The fee is only ever marked paid by the
-signed webhook, underpayments are refused, and a retried webhook changes nothing.
+### Payments
+
+Tenants pay **inside Kheja_Link's own screens**: they choose M-Pesa, type their number, and
+approve the prompt on their phone. Paystack is the processor behind that, used as an API —
+the app never opens a Paystack page for M-Pesa and never holds a key.
+
+```
+app  ──▶  /api/payments/charge   ──▶  Paystack  /charge          (start an M-Pesa charge)
+app  ──▶  /api/payments/status   ──▶  Paystack  /transaction/verify/:ref
+Paystack ──▶  /api/payments/webhook                               (signed, independent)
+```
+
+The amount always comes from the pending row in our own database, read as the signed-in
+tenant, so nothing the app sends can change what is charged. A payment is marked paid only
+after Paystack itself confirms it — through the signed webhook, or through the server-side
+verify — so a payment still completes if the webhook is slow. Underpayments are refused and
+confirming twice does nothing.
+
+**Cards** are the one thing that leaves the app: "Pay by card" opens Paystack's secure page
+for the same payment. Taking card numbers in our own screens would make Kheja_Link liable
+for PCI-DSS compliance, which Paystack also requires before allowing it.
+
+Set up in Paystack → **Settings → API Keys & Webhooks**:
+
+| Setting | Value |
+| --- | --- |
+| Webhook URL (live) | `https://www.khejalink.name.ng/api/payments/webhook` |
+| `PAYSTACK_SECRET_KEY` on Vercel | the **live** secret key, `sk_live_…` |
+| `SUPABASE_SERVICE_ROLE_KEY` on Vercel | required — without it no payment can be recorded |
+
+**Admin → Business settings** shows a live Payments panel: whether the key works, whether the
+account has KES enabled, whether payments can be recorded, and the webhook URL to paste.
 
 **Admin** (`/admin`): approve, edit and disable movers / internet / cleaning companies, see the
 Stays waitlist, and edit business settings. Make an account an admin in the SQL Editor:

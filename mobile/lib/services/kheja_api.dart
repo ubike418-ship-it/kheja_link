@@ -34,6 +34,10 @@ class KhejaApi {
   User? get currentUser => _client.auth.currentUser;
   bool get isSignedIn => currentUser != null;
 
+  /// The session token, sent to Kheja_Link's own payment endpoints so the
+  /// server can check the payment really belongs to this person.
+  String? get accessToken => _client.auth.currentSession?.accessToken;
+
   // ---------------------------------------------------------------------------
   // Reference data
   // ---------------------------------------------------------------------------

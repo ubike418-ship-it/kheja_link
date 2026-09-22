@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import SettingRow from "@/components/admin/SettingRow";
 import FeeAllocationForm from "@/components/admin/FeeAllocationForm";
+import PaymentsHealth from "@/components/admin/PaymentsHealth";
 import type { AppSettingRow, FeeAllocationRow } from "@/lib/supabase/database.types";
 
 export const metadata = { title: "Business settings — Admin" };
@@ -34,8 +35,12 @@ export default async function SettingsPage() {
   const shares = (allocations ?? []) as FeeAllocationRow[];
   const lastRun = byKey.get("last_maintenance_at")?.value;
 
+  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.khejalink.name.ng").replace(/\/$/, "");
+
   return (
     <div className="space-y-12">
+      <PaymentsHealth siteUrl={siteUrl} />
+
       <section className="space-y-6">
         <div className="space-y-2 max-w-2xl">
           <h2 className="text-3xl font-black text-zinc-900 dark:text-white tracking-tighter">Business settings</h2>
