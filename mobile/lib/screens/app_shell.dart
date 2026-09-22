@@ -132,8 +132,8 @@ class _AppShellState extends State<AppShell> {
         ),
         (
           screen: const TenantRequestsScreen(isRoot: true),
-          icon: Icons.inbox_outlined,
-          activeIcon: Icons.inbox_rounded,
+          icon: Icons.assignment_outlined,
+          activeIcon: Icons.assignment_rounded,
           label: 'Requests'
         ),
         (
@@ -144,9 +144,9 @@ class _AppShellState extends State<AppShell> {
         ),
         (
           screen: const NotificationsScreen(),
-          icon: Icons.notifications_none_rounded,
-          activeIcon: Icons.notifications_rounded,
-          label: 'Alerts'
+          icon: Icons.inbox_outlined,
+          activeIcon: Icons.inbox_rounded,
+          label: 'Inbox'
         ),
         (
           screen: const ProfileScreen(),
@@ -178,9 +178,9 @@ class _AppShellState extends State<AppShell> {
       ),
       (
         screen: const NotificationsScreen(),
-        icon: Icons.notifications_none_rounded,
-        activeIcon: Icons.notifications_rounded,
-        label: 'Alerts'
+        icon: Icons.inbox_outlined,
+        activeIcon: Icons.inbox_rounded,
+        label: 'Inbox'
       ),
       (
         screen: khejaApi.isSignedIn ? const ProfileScreen() : const ProfileScreen(),
@@ -207,8 +207,8 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     final tabs = _tabs;
-    // The alerts tab is where the badge belongs, wherever it sits.
-    final alertsIndex = tabs.indexWhere((t) => t.label == 'Alerts');
+    // The Inbox tab is where the badge belongs, wherever it sits.
+    final alertsIndex = tabs.indexWhere((t) => t.label == 'Inbox');
 
     return PopScope(
       canPop: false,

@@ -102,8 +102,8 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
                 icon: Icons.notifications_active_rounded,
                 color: KhejaColors.blue,
                 title: 'Notifications',
-                body: 'So we can tell you the moment a home you liked becomes '
-                    'vacant. Saved homes go fast, and a few hours matters.',
+                body: 'Your alerts — a saved home becoming available, replies to '
+                    'your requests — arrive in the Inbox inside the app.',
                 status: _notification,
               ),
               const SizedBox(height: 22),

@@ -309,7 +309,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _Tile(
             icon: Icons.notifications_rounded,
             label: 'Notification preferences',
-            subtitle: 'In-app, email and SMS; which alerts you get',
+            subtitle: 'Choose what appears in your Inbox',
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const NotificationPreferencesScreen()),
             ),

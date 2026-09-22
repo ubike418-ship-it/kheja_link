@@ -1,4 +1,4 @@
-# Keeps the free Supabase project from pausing, and sends queued alerts.
+# Keeps the free Supabase project from pausing.
 #
 # Supabase pauses a free project after about a week with no API activity. This
 # makes real requests against the project every hour, straight from GitHub, so
@@ -8,8 +8,6 @@
 # Setup — GitHub → Settings → Secrets and variables → Actions → New secret:
 #   SUPABASE_URL       https://<project-ref>.supabase.co
 #   SUPABASE_ANON_KEY  the anon / public key (safe; RLS protects the data)
-#   CRON_SECRET        optional; the same value as CRON_SECRET on Vercel.
-#                      With it, each run also sends pending email / SMS alerts.
 #
 # GitHub turns scheduled workflows off after 60 days with no commits to the
 # repository. If that happens, GitHub emails the owner; re-enable it from the
@@ -50,17 +48,4 @@ jobs:
             -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
             -H "Content-Type: application/json" \
             -d '{}'
-          echo
-
-      - name: Send queued notifications
-        env:
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
-        run: |
-          if [ -z "$CRON_SECRET" ]; then
-            echo "CRON_SECRET not set; skipping email / SMS dispatch."
-            exit 0
-          fi
-          curl --fail --silent --show-error --retry 2 --retry-delay 15 --max-time 60 \
-            "https://www.khejalink.name.ng/api/cron/daily" \
-            -H "Authorization: Bearer $CRON_SECRET"
           echo

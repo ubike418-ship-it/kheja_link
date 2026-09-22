@@ -152,9 +152,9 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
           target: _alertsKey,
           icon: Icons.notifications_active_rounded,
           color: KhejaColors.amber,
-          title: 'Notifications',
+          title: 'Your Inbox',
           body: 'You are notified of new requests, interest in your homes, and listing '
-              'updates. Choose how under Account → Notification preferences.',
+              'updates — all in your Inbox. Choose which under Account.',
         ),
       ],
     );
@@ -240,7 +240,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
                           key: _alertsKey,
                           onPressed: () => _push(const NotificationsScreen()),
                           icon: const Icon(Icons.notifications_none_rounded),
-                          tooltip: 'Notifications',
+                          tooltip: 'Inbox',
                         ),
                       ],
                     ),

@@ -12,7 +12,7 @@ import '../widgets/states.dart';
 ///
 /// Saves a standing search. Whenever a matching home becomes available — or
 /// gets a vacancy date within the chosen window — the database notifies the
-/// tenant, in the app and by any channel they have switched on.
+/// tenant in their Inbox.
 class SearchAlertSheet extends StatefulWidget {
   const SearchAlertSheet({super.key, this.initial = const PropertyFilters()});
 

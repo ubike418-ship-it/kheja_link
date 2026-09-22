@@ -1333,49 +1333,30 @@ class PropertyInterest {
   }
 }
 
-/// What a person wants to hear about, and how.
+/// Which kinds of notification a person wants. Everything is delivered in
+/// the app's Inbox — Kheja_Link sends no email or SMS — so there is no channel
+/// to choose, only what to hear about.
 class NotificationPreferences {
   const NotificationPreferences({
-    this.inApp = true,
-    this.email = true,
-    this.sms = false,
     this.availabilityAlerts = true,
     this.requestUpdates = true,
   });
 
-  final bool inApp;
-  final bool email;
-  final bool sms;
   final bool availabilityAlerts;
   final bool requestUpdates;
 
-  NotificationPreferences copyWith({
-    bool? inApp,
-    bool? email,
-    bool? sms,
-    bool? availabilityAlerts,
-    bool? requestUpdates,
-  }) =>
+  NotificationPreferences copyWith({bool? availabilityAlerts, bool? requestUpdates}) =>
       NotificationPreferences(
-        inApp: inApp ?? this.inApp,
-        email: email ?? this.email,
-        sms: sms ?? this.sms,
         availabilityAlerts: availabilityAlerts ?? this.availabilityAlerts,
         requestUpdates: requestUpdates ?? this.requestUpdates,
       );
 
   Map<String, dynamic> toRow() => {
-        'in_app': inApp,
-        'email': email,
-        'sms': sms,
         'availability_alerts': availabilityAlerts,
         'request_updates': requestUpdates,
       };
 
   factory NotificationPreferences.fromMap(Map<String, dynamic> map) => NotificationPreferences(
-        inApp: map['in_app'] != false,
-        email: map['email'] != false,
-        sms: map['sms'] == true,
         availabilityAlerts: map['availability_alerts'] != false,
         requestUpdates: map['request_updates'] != false,
       );

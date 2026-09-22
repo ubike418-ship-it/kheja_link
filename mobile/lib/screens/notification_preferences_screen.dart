@@ -6,10 +6,11 @@ import '../models/models.dart';
 import '../services/kheja_api.dart';
 import '../widgets/states.dart';
 
-/// Which alerts a person gets, and how.
+/// Which notifications a person gets.
 ///
-/// The database reads these before creating any notification, so switching a
-/// category off really stops it — including the email and SMS copies.
+/// Everything arrives in the app's Inbox; Kheja_Link sends no email or SMS.
+/// The database reads these before creating a notification, so switching a
+/// kind off really stops it.
 class NotificationPreferencesScreen extends StatefulWidget {
   const NotificationPreferencesScreen({super.key});
 
@@ -84,7 +85,7 @@ class _NotificationPreferencesScreenState extends State<NotificationPreferencesS
               : ListView(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
                   children: [
-                    Text('What to tell me about', style: theme.textTheme.titleLarge),
+                    Text('What to notify me about', style: theme.textTheme.titleLarge),
                     const SizedBox(height: 10),
                     _Switch(
                       icon: Icons.home_work_rounded,
@@ -100,36 +101,28 @@ class _NotificationPreferencesScreenState extends State<NotificationPreferencesS
                       value: p.requestUpdates,
                       onChanged: (v) => _update(p.copyWith(requestUpdates: v)),
                     ),
-                    const SizedBox(height: 22),
-                    Text('How to reach me', style: theme.textTheme.titleLarge),
-                    const SizedBox(height: 10),
-                    _Switch(
-                      icon: Icons.notifications_rounded,
-                      title: 'In-app notifications',
-                      subtitle: 'In the Alerts tab. Payment and account notices always appear here.',
-                      value: p.inApp,
-                      onChanged: (v) => _update(p.copyWith(inApp: v)),
-                    ),
-                    _Switch(
-                      icon: Icons.mail_rounded,
-                      title: 'Email',
-                      subtitle: 'To ${khejaApi.currentUser?.email ?? 'your account email'}.',
-                      value: p.email,
-                      onChanged: (v) => _update(p.copyWith(email: v)),
-                    ),
-                    _Switch(
-                      icon: Icons.sms_rounded,
-                      title: 'SMS',
-                      subtitle: 'To the phone number on your profile. Kenyan numbers only.',
-                      value: p.sms,
-                      onChanged: (v) => _update(p.copyWith(sms: v)),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Email and SMS are sent by Kheja_Link\'s server once those services are '
-                      'switched on for your area; until then you get the in-app alert. We do '
-                      'not place automated calls.',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: KhejaColors.zinc400, height: 1.5),
+                    const SizedBox(height: 18),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: KhejaColors.blue.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(KhejaRadius.lg),
+                      ),
+                      child: const Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.inbox_rounded, color: KhejaColors.blue, size: 20),
+                          SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'All notifications arrive in your Inbox, in the app. Payment '
+                              'and account notices always appear there. We do not send '
+                              'email or SMS.',
+                              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, height: 1.5),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),

@@ -8,19 +8,20 @@ import '../widgets/kheja_sheet.dart';
 import '../widgets/states.dart';
 import 'auth_screen.dart';
 import 'hunting_screen.dart';
+import 'inquiries_screen.dart';
 import 'my_requests_screen.dart';
 import 'notification_preferences_screen.dart';
 import 'property_detail_screen.dart';
 import 'request_sheet.dart';
 import 'tenant_requests_screen.dart';
 
-/// The notification centre.
+/// The Inbox: every notification Kheja_Link sends, in one place.
 ///
 /// Everything here is written by the database: a saved home becoming
 /// available, a new match, a request and its answer, a payment, a tenant
 /// moving in or out. Each one respects the person's preferences before it is
-/// created. Email and SMS copies go out from the server; this is the in-app
-/// view, refreshed when the app is open.
+/// created. This is the only place notifications go — Kheja_Link sends no
+/// email or SMS — refreshed whenever the app is open.
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
 
@@ -32,6 +33,27 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   late Future<List<KhejaNotification>> _future;
   final Set<String> _readLocally = {};
   bool _isLandlord = false;
+  String _filter = 'all';
+
+  static const _filters = <({String id, String label})>[
+    (id: 'all', label: 'All'),
+    (id: 'unread', label: 'Unread'),
+    (id: 'homes', label: 'Homes'),
+    (id: 'requests', label: 'Requests'),
+    (id: 'messages', label: 'Messages'),
+    (id: 'payments', label: 'Payments'),
+  ];
+
+  bool _isRead(KhejaNotification n) => n.isRead || _readLocally.contains(n.id);
+
+  bool _matches(KhejaNotification n) => switch (_filter) {
+        'unread' => !_isRead(n),
+        'homes' => const {'vacancy', 'match', 'listing_status'}.contains(n.type),
+        'requests' => const {'request', 'booking', 'check_in', 'move_out'}.contains(n.type),
+        'messages' => n.type == 'inquiry',
+        'payments' => n.type == 'payment' || n.type == 'system',
+        _ => true,
+      };
 
   @override
   void initState() {
@@ -136,6 +158,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       'request' || 'booking' || 'check_in' || 'move_out' => [
           (label: fromLandlordSide ? 'View requests' : 'My requests', onTap: () => _openRequests(n), primary: true),
         ],
+      'inquiry' when _isLandlord => [
+          (
+            label: 'Read message',
+            onTap: () {
+              _markRead(n);
+              Navigator.of(context).push(MaterialPageRoute(builder: (_) => const InquiriesScreen()));
+            },
+            primary: true,
+          ),
+        ],
       'payment' => [
           (
             label: 'House Hunting',
@@ -155,10 +187,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Widget build(BuildContext context) {
     if (!khejaApi.isSignedIn) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Notifications')),
+        appBar: AppBar(title: const Text('Inbox')),
         body: KhejaEmptyState(
-          icon: Icons.notifications_none_rounded,
-          title: 'Sign in for alerts',
+          icon: Icons.inbox_rounded,
+          title: 'Sign in to see your Inbox',
           message: 'We will tell you the moment a home you saved becomes available, and '
               'keep you posted on your requests.',
           actionLabel: 'Sign in',
@@ -172,7 +204,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Notifications'),
+        title: const Text('Inbox'),
         actions: [
           TextButton(onPressed: _markAllRead, child: const Text('Mark all read')),
           IconButton(
@@ -200,7 +232,56 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               ]);
             }
 
-            final items = snapshot.data ?? const [];
+            final all = snapshot.data ?? const [];
+            final items = all.where(_matches).toList();
+            final unread = all.where((n) => !_isRead(n)).length;
+
+            final header = Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    unread == 0
+                        ? 'All your Kheja_Link notifications, in one place.'
+                        : '$unread unread · all your Kheja_Link notifications, in one place.',
+                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: KhejaColors.zinc500),
+                  ),
+                  const SizedBox(height: 10),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        for (final f in _filters)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ChoiceChip(
+                              label: Text(f.id == 'unread' && unread > 0 ? 'Unread ($unread)' : f.label),
+                              selected: _filter == f.id,
+                              onSelected: (_) => setState(() => _filter = f.id),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+
+            if (all.isNotEmpty && items.isEmpty) {
+              return ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: [
+                  header,
+                  const KhejaEmptyState(
+                    icon: Icons.filter_list_rounded,
+                    title: 'Nothing here',
+                    message: 'No notifications match this filter.',
+                  ),
+                ],
+              );
+            }
+
             if (items.isEmpty) {
               return ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
@@ -217,19 +298,23 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             }
 
             return ListView.separated(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+              padding: const EdgeInsets.fromLTRB(0, 4, 0, 32),
               physics: const AlwaysScrollableScrollPhysics(),
-              itemCount: items.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
-              itemBuilder: (context, i) {
-                final n = items[i];
-                final isRead = n.isRead || _readLocally.contains(n.id);
-                return _NotificationTile(
-                  item: n,
-                  isRead: isRead,
-                  actions: _actions(n),
-                  onTap: () => n.propertyId != null ? _openProperty(n) : _markRead(n),
-                  onMarkRead: isRead ? null : () => _markRead(n),
+              itemCount: items.length + 1,
+              separatorBuilder: (_, i) => SizedBox(height: i == 0 ? 8 : 12),
+              itemBuilder: (context, index) {
+                if (index == 0) return header;
+                final n = items[index - 1];
+                final isRead = _isRead(n);
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: _NotificationTile(
+                    item: n,
+                    isRead: isRead,
+                    actions: _actions(n),
+                    onTap: () => n.propertyId != null ? _openProperty(n) : _markRead(n),
+                    onMarkRead: isRead ? null : () => _markRead(n),
+                  ),
                 );
               },
             );

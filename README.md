@@ -19,9 +19,9 @@ See [`mobile/README.md`](mobile/README.md) for the Flutter app.
 
 ### Download the Android app
 
-**[Download Kheja_Link for Android](https://github.com/ubike418-ship-it/kheja_link/releases/download/v1.3.0/app-arm64-v8a-release.apk)** (27 MB) — works on almost every phone from the last several years.
+**[Download Kheja_Link for Android](https://github.com/ubike418-ship-it/kheja_link/releases/download/v1.3.1/app-arm64-v8a-release.apk)** (27 MB) — works on almost every phone from the last several years.
 
-Older 32-bit devices want [this build](https://github.com/ubike418-ship-it/kheja_link/releases/download/v1.3.0/app-armeabi-v7a-release.apk) instead, and all builds are listed on the [releases page](https://github.com/ubike418-ship-it/kheja_link/releases/latest).
+Older 32-bit devices want [this build](https://github.com/ubike418-ship-it/kheja_link/releases/download/v1.3.1/app-armeabi-v7a-release.apk) instead, and all builds are listed on the [releases page](https://github.com/ubike418-ship-it/kheja_link/releases/latest).
 
 ---
 
@@ -48,8 +48,8 @@ Fill in the values from your Supabase project (**Project Settings → API**):
 | `NEXT_PUBLIC_SITE_URL` | `http://localhost:3000` locally; your real domain in production |
 
 > **Never** put the `service_role` key in a `NEXT_PUBLIC_` variable or in the Flutter app. It
-> bypasses every Row Level Security policy. Only two server routes use it, as the server-only
-> `SUPABASE_SERVICE_ROLE_KEY`: the payment webhook and the notification sender.
+> bypasses every Row Level Security policy. Only the payment server routes use it, as the
+> server-only `SUPABASE_SERVICE_ROLE_KEY`.
 
 ### 3. Set up the database
 
@@ -151,8 +151,9 @@ Level Security enabled, so a forged request cannot read or write what it should 
 
 [`supabase/migrations/0012_hunting_availability_requests.sql`](supabase/migrations/0012_hunting_availability_requests.sql)
 adds the KES 500 house hunting fee, property availability and vacancy dates, "notify me"
-subscriptions, house requests, notification preferences with an email/SMS outbox, the Stays
-waitlist, and manual approval for service providers.
+subscriptions, house requests, notification preferences, the Stays waitlist, and manual
+approval for service providers. **All notifications are in-app** (the Inbox tab); Kheja_Link
+sends no email or SMS — see `0013_in_app_notifications_only.sql`.
 
 > **Run the migration before deploying this code.** Both apps now select the new
 > `availability` column; against an un-migrated database, listings fail to load. Paste the
@@ -180,7 +181,7 @@ A free Supabase project pauses after about a week without API activity. Two inde
 query it:
 
 1. **GitHub Actions**, every hour — [`.github/workflows/supabase-keepalive.yml`](.github/workflows/supabase-keepalive.yml).
-   Add repository secrets `SUPABASE_URL` and `SUPABASE_ANON_KEY` (and optionally `CRON_SECRET`).
+   Add repository secrets `SUPABASE_URL` and `SUPABASE_ANON_KEY`.
    GitHub switches scheduled workflows off after 60 days without commits; re-enable it from the
    Actions tab if you get that email.
 2. **Vercel Cron**, daily — [`vercel.json`](vercel.json) calls `/api/cron/daily`.
@@ -193,15 +194,8 @@ its free-tier policy.
 
 | Variable | What it is |
 | --- | --- |
-| `CRON_SECRET` | Protects `/api/cron/daily`. Without it the job still keeps the project awake but sends no email/SMS |
-| `RESEND_API_KEY`, `NOTIFY_FROM_EMAIL` | Email notifications (optional) |
-| `AFRICASTALKING_USERNAME`, `AFRICASTALKING_API_KEY`, `AFRICASTALKING_SENDER_ID` | SMS notifications (optional) |
+| `CRON_SECRET` | Optional. Protects `/api/cron/daily`, the keep-alive job |
 | `PAYMENTS_DEMO_MODE` | `true` only for testing the hunting fee without Paystack. Never in production |
-
-Email and SMS are sent by the server job with `SUPABASE_SERVICE_ROLE_KEY` (server-only, as the
-webhook already uses), because it must read recipients' addresses. Without a provider,
-those copies are marked skipped and users still get the in-app notification. No automated
-calls are placed.
 
 ---
 
