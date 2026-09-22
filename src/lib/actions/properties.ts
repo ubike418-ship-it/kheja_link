@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient, getCurrentProfile } from "@/lib/supabase/server";
 import type { ProfileRow } from "@/lib/supabase/database.types";
 import { slugify } from "@/lib/format";
-import { fieldErrorsOf, propertySchema } from "@/lib/validation";
+import { availabilitySchema, fieldErrorsOf, propertySchema } from "@/lib/validation";
 import type { ActionResult } from "@/lib/types";
 
 const IMAGE_BUCKET = "property-images";
@@ -227,6 +227,54 @@ export async function setPropertyStatusAction(
   revalidatePath("/properties");
   revalidatePath("/");
   return { ok: true, data: undefined, message: `Listing marked as ${status}.` };
+}
+
+/**
+ * Sets whether a home can be moved into: free now, free from a date, occupied,
+ * or temporarily off the market. Tenants waiting on the home are notified by
+ * the database when it becomes available — nothing to do here.
+ */
+export async function setPropertyAvailabilityAction(input: {
+  propertyId: string;
+  availability: "available" | "occupied" | "notice_given" | "unavailable";
+  availableFrom?: string;
+  noticeDate?: string;
+}): Promise<ActionResult> {
+  const gate = await requireLandlord();
+  if ("error" in gate) return { ok: false, error: gate.error };
+
+  const parsed = availabilitySchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Check the dates and try again." };
+  }
+  const v = parsed.data;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("properties")
+    .update({
+      availability: v.availability,
+      available_from: v.availability === "notice_given" ? v.availableFrom || null : null,
+      notice_date: v.availability === "notice_given" ? v.noticeDate || null : null,
+    })
+    .eq("id", v.propertyId)
+    .eq("owner_id", gate.profile.id)
+    .select("slug")
+    .maybeSingle();
+
+  if (error || !data) return { ok: false, error: "Could not update availability. Please try again." };
+
+  revalidatePath("/dashboard/properties");
+  revalidatePath(`/properties/${data.slug}`);
+  revalidatePath("/properties");
+  return {
+    ok: true,
+    data: undefined,
+    message:
+      v.availability === "available"
+        ? "Marked available. Anyone waiting for this home has been told."
+        : "Availability updated.",
+  };
 }
 
 /**

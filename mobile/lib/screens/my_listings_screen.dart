@@ -6,9 +6,12 @@ import '../models/models.dart';
 import '../services/kheja_api.dart';
 import '../widgets/brand.dart';
 import '../widgets/property_card.dart';
+import '../widgets/kheja_sheet.dart';
 import '../widgets/states.dart';
+import 'availability_sheet.dart';
 import 'listing_editor_screen.dart';
 import 'property_detail_screen.dart';
+import 'tenant_requests_screen.dart';
 
 /// A landlord's own listings, in every status. RLS lets an owner see their
 /// drafts here while the public search only ever returns published homes.
@@ -21,17 +24,50 @@ class MyListingsScreen extends StatefulWidget {
 
 class _MyListingsScreenState extends State<MyListingsScreen> {
   late Future<List<Property>> _future;
+  Map<String, ({int saved, int waiting})> _interest = const {};
+  Map<String, int> _openRequests = const {};
 
   @override
   void initState() {
     super.initState();
     _future = khejaApi.fetchMyProperties();
+    _loadCounts();
+  }
+
+  /// Who is waiting on each home, and how many requests need a reply. Never
+  /// blocks the list: the counts simply appear when they arrive.
+  Future<void> _loadCounts() async {
+    final interest = await khejaApi.fetchInterestCounts();
+    final requests =
+        await khejaApi.fetchRequestsForOwner().catchError((_) => <OwnerRequest>[]);
+    if (!mounted) return;
+    final open = <String, int>{};
+    for (final r in requests.where((r) => r.isOpen)) {
+      open[r.propertyId] = (open[r.propertyId] ?? 0) + 1;
+    }
+    setState(() {
+      _interest = interest;
+      _openRequests = open;
+    });
   }
 
   Future<void> _refresh() async {
     final future = khejaApi.fetchMyProperties();
     setState(() => _future = future);
+    _loadCounts();
     await future;
+  }
+
+  Future<void> _setAvailability(Property property) async {
+    final saved = await showKhejaSheet<bool>(context, AvailabilitySheet(property: property));
+    if (saved == true && mounted) {
+      showKhejaSnack(context, 'Availability updated. Anyone waiting is notified when it is free.');
+      await _refresh();
+    }
+  }
+
+  Future<void> _showInterested(Property property) async {
+    await showKhejaSheet<void>(context, _InterestedSheet(property: property));
   }
 
   Future<void> _openEditor([String? propertyId]) async {
@@ -131,9 +167,9 @@ class _MyListingsScreenState extends State<MyListingsScreen> {
                   SizedBox(height: 50),
                   KhejaEmptyState(
                     icon: Icons.home_work_rounded,
-                    title: 'No listings yet',
-                    message: 'Tap "Add property" to list your first house. You can '
-                        'edit it, mark it rented or take it down from here.',
+                    title: "You haven't listed a property yet",
+                    message: 'Tap "Add property" to list your first house — free for now. '
+                        'You can edit it, set its availability or take it down from here.',
                   ),
                 ],
               );
@@ -158,6 +194,15 @@ class _MyListingsScreenState extends State<MyListingsScreen> {
                 final property = items[index - 1];
                 return _ListingRow(
                   property: property,
+                  interest: _interest[property.id],
+                  openRequests: _openRequests[property.id] ?? 0,
+                  onSetAvailability: () => _setAvailability(property),
+                  onViewRequests: () => Navigator.of(context)
+                      .push(MaterialPageRoute(
+                        builder: (_) => TenantRequestsScreen(propertyId: property.id),
+                      ))
+                      .then((_) => _refresh()),
+                  onInterested: () => _showInterested(property),
                   onOpen: property.status == 'published'
                       ? () => Navigator.of(context).push(
                             MaterialPageRoute(
@@ -238,10 +283,20 @@ class _ListingRow extends StatelessWidget {
     required this.onStatusChanged,
     required this.onEdit,
     required this.onDelete,
+    required this.onSetAvailability,
+    required this.onViewRequests,
+    required this.onInterested,
+    required this.openRequests,
+    this.interest,
     this.onOpen,
   });
 
   final Property property;
+  final ({int saved, int waiting})? interest;
+  final int openRequests;
+  final VoidCallback onSetAvailability;
+  final VoidCallback onViewRequests;
+  final VoidCallback onInterested;
   final ValueChanged<String> onStatusChanged;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
@@ -294,6 +349,10 @@ class _ListingRow extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 8),
+                    if (property.availabilityLabel != null) ...[
+                      AvailabilityChip(property: property),
+                      const SizedBox(height: 6),
+                    ],
                     Row(
                       children: [
                         StatusPill(property.status),
@@ -312,6 +371,39 @@ class _ListingRow extends StatelessWidget {
                       ],
                     ),
                   ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              FilledButton.icon(
+                onPressed: onSetAvailability,
+                style: FilledButton.styleFrom(minimumSize: const Size(0, 40)),
+                icon: const Icon(Icons.event_available_rounded, size: 18),
+                label: const Text('Set availability'),
+              ),
+              OutlinedButton.icon(
+                onPressed: onViewRequests,
+                style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)),
+                icon: Badge(
+                  isLabelVisible: openRequests > 0,
+                  label: Text('$openRequests'),
+                  child: const Icon(Icons.inbox_rounded, size: 18),
+                ),
+                label: const Text('View requests'),
+              ),
+              OutlinedButton.icon(
+                onPressed: onInterested,
+                style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)),
+                icon: const Icon(Icons.favorite_border_rounded, size: 18),
+                label: Text(
+                  interest == null
+                      ? 'Interested'
+                      : 'Interested · ${interest!.waiting + interest!.saved}',
                 ),
               ),
             ],
@@ -369,6 +461,81 @@ class _ListingRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Who has saved this home, or asked to be told when it is free. First names
+/// only — the database never sends a tenant's contact details here.
+class _InterestedSheet extends StatelessWidget {
+  const _InterestedSheet({required this.property});
+
+  final Property property;
+
+  @override
+  Widget build(BuildContext context) {
+    return KhejaSheet(
+      title: 'Interested tenants',
+      subtitle: property.title,
+      actionLabel: 'Done',
+      onAction: () => Navigator.of(context).pop(),
+      children: [
+        FutureBuilder<List<InterestedTenant>>(
+          future: khejaApi.fetchInterestedTenants(property.id),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 30),
+                child: Center(child: CircularProgressIndicator(color: KhejaColors.blue)),
+              );
+            }
+            if (snapshot.hasError) {
+              return Text(describeError(snapshot.error!),
+                  style: const TextStyle(color: KhejaColors.red, fontWeight: FontWeight.w700));
+            }
+            final people = snapshot.data ?? const [];
+            if (people.isEmpty) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 20),
+                child: Text(
+                  'Nobody yet. Tenants who save this home, or ask to be notified when it '
+                  'is free, appear here.',
+                  style: TextStyle(color: KhejaColors.zinc500, fontWeight: FontWeight.w600, height: 1.5),
+                ),
+              );
+            }
+            return Column(
+              children: [
+                for (final t in people)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(
+                      backgroundColor: (t.kind == 'waiting' ? KhejaColors.purple : KhejaColors.red)
+                          .withValues(alpha: 0.12),
+                      child: Icon(
+                        t.kind == 'waiting'
+                            ? Icons.notifications_active_rounded
+                            : Icons.favorite_rounded,
+                        size: 18,
+                        color: t.kind == 'waiting' ? KhejaColors.purple : KhejaColors.red,
+                      ),
+                    ),
+                    title: Text(t.firstName, style: const TextStyle(fontWeight: FontWeight.w800)),
+                    subtitle: Text(
+                      '${t.kind == 'waiting' ? 'Waiting for it to be free' : 'Saved it'} · '
+                      '${formatRelativeDate(t.since).toLowerCase()}',
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                const Text(
+                  'When you set this home to "Available now", everyone here is notified.',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: KhejaColors.zinc400),
+                ),
+              ],
+            );
+          },
+        ),
+      ],
     );
   }
 }

@@ -47,8 +47,9 @@ Fill in the values from your Supabase project (**Project Settings → API**):
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | The anon / public key. Safe in the browser — Row Level Security is what protects the data |
 | `NEXT_PUBLIC_SITE_URL` | `http://localhost:3000` locally; your real domain in production |
 
-> **Never** put the `service_role` key in this project. It bypasses every Row Level Security
-> policy. Nothing in this codebase needs it.
+> **Never** put the `service_role` key in a `NEXT_PUBLIC_` variable or in the Flutter app. It
+> bypasses every Row Level Security policy. Only two server routes use it, as the server-only
+> `SUPABASE_SERVICE_ROLE_KEY`: the payment webhook and the notification sender.
 
 ### 3. Set up the database
 
@@ -127,7 +128,7 @@ src/
 └── middleware.ts             Session refresh + route guards
 supabase/
 ├── setup.sql                 Everything, in one paste-ready file
-└── migrations/               The same thing split into 0001 / 0002 / 0003
+└── migrations/               The same thing, split into numbered migrations
 ```
 
 ### How authorization works
@@ -143,6 +144,64 @@ Level Security enabled, so a forged request cannot read or write what it should 
 - Phone numbers and email addresses are never publicly selectable from `profiles`; public
   listing pages read the restricted `public_profiles` view instead.
 - Storage objects can only be written into a folder named after the uploader's own user id.
+
+---
+
+## House hunting, availability, requests and alerts (0012)
+
+[`supabase/migrations/0012_hunting_availability_requests.sql`](supabase/migrations/0012_hunting_availability_requests.sql)
+adds the KES 500 house hunting fee, property availability and vacancy dates, "notify me"
+subscriptions, house requests, notification preferences with an email/SMS outbox, the Stays
+waitlist, and manual approval for service providers.
+
+> **Run the migration before deploying this code.** Both apps now select the new
+> `availability` column; against an un-migrated database, listings fail to load. Paste the
+> migration into the Supabase SQL Editor (or re-run `setup.sql`, which includes it), then deploy.
+
+**Business rules live in the database**, in `app_settings` — edit them at `/admin/settings`
+rather than in code: `hunting_fee` (500), `landlord_listing_fee` (0), the free-listing offer
+label and optional end date, `stays_enabled` (false), `service_provider_registration_enabled`
+(false) and more. How each hunting fee is split is in `fee_allocations` (100% platform until
+agreed otherwise); every confirmed payment records the split in force at the time.
+
+**Payments** reuse the Paystack route and webhook. The fee is only ever marked paid by the
+signed webhook, underpayments are refused, and a retried webhook changes nothing.
+
+**Admin** (`/admin`): approve, edit and disable movers / internet / cleaning companies, see the
+Stays waitlist, and edit business settings. Make an account an admin in the SQL Editor:
+
+```sql
+update public.profiles set role = 'admin' where id = '<user id>';
+```
+
+### Keeping the free Supabase project awake
+
+A free Supabase project pauses after about a week without API activity. Two independent jobs
+query it:
+
+1. **GitHub Actions**, every hour — [`.github/workflows/supabase-keepalive.yml`](.github/workflows/supabase-keepalive.yml).
+   Add repository secrets `SUPABASE_URL` and `SUPABASE_ANON_KEY` (and optionally `CRON_SECRET`).
+   GitHub switches scheduled workflows off after 60 days without commits; re-enable it from the
+   Actions tab if you get that email.
+2. **Vercel Cron**, daily — [`vercel.json`](vercel.json) calls `/api/cron/daily`.
+
+Both also run `run_daily_maintenance()`, which opens homes whose vacancy date has arrived and
+expires abandoned checkouts. This is a strong safeguard, not a guarantee: Supabase can change
+its free-tier policy.
+
+### Environment variables added
+
+| Variable | What it is |
+| --- | --- |
+| `CRON_SECRET` | Protects `/api/cron/daily`. Without it the job still keeps the project awake but sends no email/SMS |
+| `RESEND_API_KEY`, `NOTIFY_FROM_EMAIL` | Email notifications (optional) |
+| `AFRICASTALKING_USERNAME`, `AFRICASTALKING_API_KEY`, `AFRICASTALKING_SENDER_ID` | SMS notifications (optional) |
+| `PAYMENTS_DEMO_MODE` | `true` only for testing the hunting fee without Paystack. Never in production |
+
+Email and SMS are sent by the server job with `SUPABASE_SERVICE_ROLE_KEY` (server-only, as the
+webhook already uses), because it must read recipients' addresses. Without a provider,
+those copies are marked skipped and users still get the in-app notification. No automated
+calls are placed.
 
 ---
 

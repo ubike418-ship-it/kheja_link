@@ -126,7 +126,10 @@ class _FilterSheetState extends State<FilterSheet> {
                     (value: 4, label: '4+'),
                   ],
                   onChanged: (value) =>
-                      setState(() => _draft = _draft.copyWith(bedrooms: value)),
+                      // The sheet always means "at least"; a category's exact
+                      // count is dropped once the tenant picks here.
+                      setState(() => _draft =
+                          _draft.copyWith(bedrooms: value, exactBedrooms: false)),
                 ),
                 const SizedBox(height: 26),
 
@@ -184,6 +187,12 @@ class _FilterSheetState extends State<FilterSheet> {
                 ),
                 const SizedBox(height: 26),
 
+                _SwitchRow(
+                  label: 'Available now only',
+                  value: _draft.availableNowOnly,
+                  onChanged: (value) =>
+                      setState(() => _draft = _draft.copyWith(availableNowOnly: value)),
+                ),
                 _SwitchRow(
                   label: 'Furnished only',
                   value: _draft.furnished,

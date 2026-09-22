@@ -11,6 +11,11 @@ export type UserRole = "seeker" | "landlord" | "admin";
 export type PropertyStatus = "draft" | "pending" | "published" | "rented" | "archived";
 export type PricePeriod = "month" | "year";
 export type InquiryStatus = "new" | "read" | "responded" | "closed";
+export type Availability = "available" | "occupied" | "notice_given" | "unavailable";
+export type PartnerCategory = "movers" | "isp" | "cleaning";
+export type ApprovalStatus = "pending" | "approved" | "rejected";
+export type WaitlistStatus = "new" | "contacted" | "onboarded" | "declined";
+export type FeeProduct = "hunting_fee" | "landlord_listing_fee" | "provider_onboarding_fee";
 
 type Timestamps = {
   created_at: string;
@@ -25,6 +30,9 @@ export type ProfileRow = Timestamps & {
   role: UserRole;
   is_verified: boolean;
   bio: string | null;
+  tenant_onboarded_at: string | null;
+  landlord_onboarded_at: string | null;
+  stays_onboarded_at: string | null;
 };
 
 export type PublicProfileRow = {
@@ -85,6 +93,9 @@ export type PropertyRow = Timestamps & {
   is_furnished: boolean;
   status: PropertyStatus;
   available_from: string | null;
+  availability: Availability;
+  notice_date: string | null;
+  availability_updated_at: string | null;
   contact_phone: string | null;
   contact_whatsapp: string | null;
   view_count: number;
@@ -122,6 +133,63 @@ export type InquiryRow = Timestamps & {
   phone: string | null;
   message: string;
   status: InquiryStatus;
+};
+
+export type PartnerRow = {
+  id: string;
+  category: PartnerCategory;
+  slug: string;
+  name: string;
+  tagline: string | null;
+  description: string | null;
+  logo_url: string | null;
+  brand_color: string;
+  icon: string | null;
+  phone: string | null;
+  email: string | null;
+  url: string | null;
+  location: string | null;
+  services: string[];
+  pricing_info: string | null;
+  is_ours: boolean;
+  is_active: boolean;
+  approval_status: ApprovalStatus;
+  onboarding_fee: number | null;
+  onboarding_paid: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AppSettingRow = {
+  key: string;
+  value: string;
+  is_public: boolean;
+  description: string | null;
+  updated_at: string;
+};
+
+export type StaysWaitlistRow = {
+  id: string;
+  user_id: string | null;
+  full_name: string;
+  phone: string | null;
+  email: string | null;
+  location: string | null;
+  property_count: number | null;
+  property_type: string | null;
+  message: string | null;
+  status: WaitlistStatus;
+  created_at: string;
+};
+
+export type FeeAllocationRow = Timestamps & {
+  id: string;
+  product: FeeProduct;
+  party: string;
+  share_percent: number;
+  is_active: boolean;
+  notes: string | null;
 };
 
 /**
@@ -190,6 +258,30 @@ export type Database = {
         Update: Partial<InquiryRow>;
         Relationships: [];
       };
+      partners: {
+        Row: PartnerRow;
+        Insert: Insertable<PartnerRow, "category" | "slug" | "name">;
+        Update: Partial<PartnerRow>;
+        Relationships: [];
+      };
+      app_settings: {
+        Row: AppSettingRow;
+        Insert: Insertable<AppSettingRow, "key" | "value">;
+        Update: Partial<AppSettingRow>;
+        Relationships: [];
+      };
+      stays_waitlist: {
+        Row: StaysWaitlistRow;
+        Insert: Insertable<StaysWaitlistRow, "full_name">;
+        Update: Partial<StaysWaitlistRow>;
+        Relationships: [];
+      };
+      fee_allocations: {
+        Row: FeeAllocationRow;
+        Insert: Insertable<FeeAllocationRow, "product" | "party" | "share_percent">;
+        Update: Partial<FeeAllocationRow>;
+        Relationships: [];
+      };
     };
     Views: {
       public_profiles: {
@@ -213,6 +305,14 @@ export type Database = {
           caretaker_name: string | null;
           caretaker_phone: string | null;
         }[];
+      };
+      run_daily_maintenance: {
+        Args: Record<string, never>;
+        Returns: Record<string, unknown>;
+      };
+      hunting_checkout_details: {
+        Args: { p_reference: string };
+        Returns: { amount: number; currency: string; status: string }[];
       };
     };
     Enums: {

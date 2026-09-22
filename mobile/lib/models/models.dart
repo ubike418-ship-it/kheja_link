@@ -28,6 +28,11 @@ String formatRelativeDate(DateTime? date) {
   return DateFormat.yMMM().format(date);
 }
 
+/// "15 Oct", or "15 Oct 2027" when it is not this year.
+String formatShortDate(DateTime date) => date.year == DateTime.now().year
+    ? DateFormat('d MMM').format(date)
+    : DateFormat('d MMM y').format(date);
+
 DateTime? _date(dynamic value) =>
     value == null ? null : DateTime.tryParse(value.toString())?.toLocal();
 
@@ -172,6 +177,8 @@ class Profile {
     this.role = 'seeker',
     this.isVerified = false,
     this.bio,
+    this.tenantOnboardedAt,
+    this.landlordOnboardedAt,
   });
 
   final String id;
@@ -181,6 +188,10 @@ class Profile {
   final String role;
   final bool isVerified;
   final String? bio;
+
+  /// When this account finished (or skipped) each role's first-run tutorial.
+  final DateTime? tenantOnboardedAt;
+  final DateTime? landlordOnboardedAt;
 
   bool get isLandlord => role == 'landlord' || role == 'admin';
 
@@ -198,6 +209,8 @@ class Profile {
         role: (map['role'] as String?) ?? 'seeker',
         isVerified: map['is_verified'] == true,
         bio: map['bio'] as String?,
+        tenantOnboardedAt: _date(map['tenant_onboarded_at']),
+        landlordOnboardedAt: _date(map['landlord_onboarded_at']),
       );
 }
 
@@ -221,6 +234,8 @@ class Property {
     this.isFurnished = false,
     this.status = 'published',
     this.availableFrom,
+    this.availability = 'available',
+    this.noticeDate,
     this.viewCount = 0,
     this.likeCount = 0,
     this.houseRules,
@@ -267,6 +282,12 @@ class Property {
   final bool isFurnished;
   final String status;
   final DateTime? availableFrom;
+
+  /// available | occupied | notice_given | unavailable. See 0012.
+  final String availability;
+
+  /// When the current tenant gave notice, if the landlord recorded it.
+  final DateTime? noticeDate;
   final int viewCount;
 
   /// How many people have saved this home. Public, so the card can show it.
@@ -305,6 +326,23 @@ class Property {
   bool isFavorited;
 
   String get typeName => propertyType?.name ?? 'Rental';
+
+  bool get isAvailableNow => availability == 'available';
+  bool get isComingAvailable => availability == 'notice_given';
+
+  /// Can a tenant request it today? Only a published home that is free now.
+  bool get isRequestable => status == 'published' && isAvailableNow;
+
+  /// "Available from 15 Oct", "Currently occupied"… Null when free now, so
+  /// cards stay clean. Mirrors availabilityLabel() in the web app.
+  String? get availabilityLabel => switch (availability) {
+        'notice_given' => availableFrom == null
+            ? 'Coming available'
+            : 'Available from ${formatShortDate(availableFrom!)}',
+        'occupied' => 'Currently occupied',
+        'unavailable' => 'Temporarily unavailable',
+        _ => null,
+      };
 
   String? get waterLabel => switch (waterBilling) {
         'included' => 'Included in rent',
@@ -384,6 +422,8 @@ class Property {
       isFurnished: map['is_furnished'] == true,
       status: (map['status'] as String?) ?? 'published',
       availableFrom: _date(map['available_from']),
+      availability: (map['availability'] as String?) ?? 'available',
+      noticeDate: _date(map['notice_date']),
       viewCount: _int(map['view_count']),
       likeCount: _int(map['like_count']),
       houseRules: map['house_rules'] as String?,
@@ -472,9 +512,11 @@ class PropertyFilters {
     this.minPrice,
     this.maxPrice,
     this.bedrooms,
+    this.exactBedrooms = false,
     this.amenitySlugs = const [],
     this.furnished = false,
     this.premium = false,
+    this.availableNowOnly = false,
     this.sort = PropertySort.newest,
   });
 
@@ -484,9 +526,16 @@ class PropertyFilters {
   final num? minPrice;
   final num? maxPrice;
   final int? bedrooms;
+
+  /// True for the "1 / 2 / 3 Bedroom" categories: exactly that many rather
+  /// than "at least".
+  final bool exactBedrooms;
   final List<String> amenitySlugs;
   final bool furnished;
   final bool premium;
+
+  /// Hide homes that are occupied or only coming available.
+  final bool availableNowOnly;
   final PropertySort sort;
 
   int get activeCount => [
@@ -498,6 +547,7 @@ class PropertyFilters {
         amenitySlugs.isEmpty ? null : amenitySlugs,
         furnished ? true : null,
         premium ? true : null,
+        availableNowOnly ? true : null,
       ].where((value) => value != null).length;
 
   PropertyFilters copyWith({
@@ -507,9 +557,11 @@ class PropertyFilters {
     Object? minPrice = _sentinel,
     Object? maxPrice = _sentinel,
     Object? bedrooms = _sentinel,
+    bool? exactBedrooms,
     List<String>? amenitySlugs,
     bool? furnished,
     bool? premium,
+    bool? availableNowOnly,
     PropertySort? sort,
   }) {
     return PropertyFilters(
@@ -520,9 +572,11 @@ class PropertyFilters {
       minPrice: minPrice == _sentinel ? this.minPrice : minPrice as num?,
       maxPrice: maxPrice == _sentinel ? this.maxPrice : maxPrice as num?,
       bedrooms: bedrooms == _sentinel ? this.bedrooms : bedrooms as int?,
+      exactBedrooms: exactBedrooms ?? this.exactBedrooms,
       amenitySlugs: amenitySlugs ?? this.amenitySlugs,
       furnished: furnished ?? this.furnished,
       premium: premium ?? this.premium,
+      availableNowOnly: availableNowOnly ?? this.availableNowOnly,
       sort: sort ?? this.sort,
     );
   }
@@ -573,6 +627,14 @@ class Partner {
   final String? phone;
   final String? url;
   final bool isOurs;
+
+  /// Partners whose logo ships inside the app, so the tile draws instantly and
+  /// works with no data. Anyone else uses [logoUrl].
+  static const _bundledLogos = {
+    'movemate-kenya': 'assets/branding/movemate-kenya.jpeg',
+  };
+
+  String? get bundledLogoAsset => _bundledLogos[slug];
 
   /// "#2563EB" -> 0xFF2563EB, falling back to the brand blue.
   int get colorValue {
@@ -685,7 +747,18 @@ class PropertyContact {
       );
 }
 
-/// A tenant's relationship with a house: booked, moved in, moved out.
+/// A house request, and the tenancy it becomes.
+///
+///   booked      pending — sent, waiting for the landlord
+///   viewed      the landlord has opened it
+///   accepted    the landlord agreed; the tenant can move in
+///   declined    the landlord said no
+///   checked_in  the tenant moved in
+///   moved_out   the tenancy ended
+///   cancelled   withdrawn by the tenant
+///
+/// The database decides who may move a request where (tenancies_guard_transition
+/// in 0012); the app only offers the moves that are allowed.
 class Tenancy {
   const Tenancy({
     required this.id,
@@ -698,27 +771,35 @@ class Tenancy {
     this.bookedAt,
     this.checkedInAt,
     this.movedOutAt,
+    this.preferredMoveIn,
+    this.note,
+    this.landlordResponse,
+    this.respondedAt,
   });
 
   final String id;
   final String propertyId;
   final String tenantId;
-  final String status; // booked | checked_in | moved_out | cancelled
+  final String status;
   final String? propertyTitle;
   final String? propertySlug;
   final String? tenantName;
   final DateTime? bookedAt;
   final DateTime? checkedInAt;
   final DateTime? movedOutAt;
+  final DateTime? preferredMoveIn;
+  final String? note;
+  final String? landlordResponse;
+  final DateTime? respondedAt;
 
-  bool get isActive => status == 'booked' || status == 'checked_in';
+  /// Still open, which blocks a second request for the same home.
+  bool get isActive =>
+      const {'booked', 'viewed', 'accepted', 'checked_in'}.contains(status);
 
-  String get statusLabel => switch (status) {
-        'booked' => 'Booked',
-        'checked_in' => 'Living here',
-        'moved_out' => 'Moved out',
-        _ => 'Cancelled',
-      };
+  bool get isPending => status == 'booked' || status == 'viewed';
+  bool get canWithdraw => const {'booked', 'viewed', 'accepted'}.contains(status);
+
+  String get statusLabel => tenancyStatusLabel(status);
 
   factory Tenancy.fromMap(Map<String, dynamic> map) {
     final property = map['property'];
@@ -737,8 +818,91 @@ class Tenancy {
       bookedAt: _date(map['booked_at']),
       checkedInAt: _date(map['checked_in_at']),
       movedOutAt: _date(map['moved_out_at']),
+      preferredMoveIn: _date(map['preferred_move_in']),
+      note: map['note'] as String?,
+      landlordResponse: map['landlord_response'] as String?,
+      respondedAt: _date(map['responded_at']),
     );
   }
+}
+
+String tenancyStatusLabel(String status) => switch (status) {
+      'booked' => 'Pending',
+      'viewed' => 'Viewed by landlord',
+      'accepted' => 'Accepted',
+      'declined' => 'Declined',
+      'checked_in' => 'Living here',
+      'moved_out' => 'Moved out',
+      _ => 'Withdrawn',
+    };
+
+/// A request as the landlord sees it, from get_requests_for_owner(). The
+/// tenant's phone number is only present once the landlord has accepted.
+class OwnerRequest {
+  const OwnerRequest({
+    required this.id,
+    required this.propertyId,
+    required this.propertyTitle,
+    required this.propertySlug,
+    required this.tenantName,
+    required this.status,
+    this.propertyType,
+    this.tenantPhone,
+    this.note,
+    this.preferredMoveIn,
+    this.landlordResponse,
+    this.bookedAt,
+    this.respondedAt,
+  });
+
+  final String id;
+  final String propertyId;
+  final String propertyTitle;
+  final String propertySlug;
+  final String? propertyType;
+  final String tenantName;
+  final String? tenantPhone;
+  final String status;
+  final String? note;
+  final DateTime? preferredMoveIn;
+  final String? landlordResponse;
+  final DateTime? bookedAt;
+  final DateTime? respondedAt;
+
+  bool get isOpen => status == 'booked' || status == 'viewed';
+  String get statusLabel => tenancyStatusLabel(status);
+
+  OwnerRequest withStatus(String next) => OwnerRequest(
+        id: id,
+        propertyId: propertyId,
+        propertyTitle: propertyTitle,
+        propertySlug: propertySlug,
+        propertyType: propertyType,
+        tenantName: tenantName,
+        tenantPhone: tenantPhone,
+        status: next,
+        note: note,
+        preferredMoveIn: preferredMoveIn,
+        landlordResponse: landlordResponse,
+        bookedAt: bookedAt,
+        respondedAt: respondedAt,
+      );
+
+  factory OwnerRequest.fromMap(Map<String, dynamic> map) => OwnerRequest(
+        id: map['id'] as String,
+        propertyId: map['property_id'] as String,
+        propertyTitle: (map['property_title'] as String?) ?? 'A listing',
+        propertySlug: (map['property_slug'] as String?) ?? '',
+        propertyType: map['property_type'] as String?,
+        tenantName: (map['tenant_name'] as String?) ?? 'A tenant',
+        tenantPhone: map['tenant_phone'] as String?,
+        status: (map['status'] as String?) ?? 'booked',
+        note: map['note'] as String?,
+        preferredMoveIn: _date(map['preferred_move_in']),
+        landlordResponse: map['landlord_response'] as String?,
+        bookedAt: _date(map['booked_at']),
+        respondedAt: _date(map['responded_at']),
+      );
 }
 
 /// What the KSh 150 unlock costs, in one place.
@@ -988,4 +1152,246 @@ class ListingDraft {
     }
     return d;
   }
+}
+
+// =============================================================================
+// 0012: business settings, house hunting, interests, preferences
+// =============================================================================
+
+/// The business rules both apps read from app_settings, so a price or a
+/// feature flag changes without a new build. The defaults match the migration
+/// and are what the app shows before the first load, or with no data.
+class BusinessSettings {
+  const BusinessSettings({
+    this.huntingFee = 500,
+    this.huntingFeeCurrency = 'KES',
+    this.huntingUnlocksContacts = true,
+    this.contactUnlockFee = kUnlockAmount,
+    this.landlordListingFee = 0,
+    this.listingOfferLabel = 'Free Property Listing — Limited-Time Offer',
+    this.listingOfferEndsOn,
+  });
+
+  final num huntingFee;
+  final String huntingFeeCurrency;
+  final bool huntingUnlocksContacts;
+  final num contactUnlockFee;
+  final num landlordListingFee;
+  final String listingOfferLabel;
+
+  /// Only shown when an admin has actually set one.
+  final DateTime? listingOfferEndsOn;
+
+  bool get listingIsFree => landlordListingFee <= 0;
+  String get huntingFeeLabel => formatPrice(huntingFee, huntingFeeCurrency);
+
+  Map<String, String> toCache() => {
+        'hunting_fee': '$huntingFee',
+        'hunting_fee_currency': huntingFeeCurrency,
+        'hunting_fee_unlocks_contacts': '$huntingUnlocksContacts',
+        'contact_unlock_fee': '$contactUnlockFee',
+        'landlord_listing_fee': '$landlordListingFee',
+        'landlord_listing_fee_offer_label': listingOfferLabel,
+        'landlord_listing_fee_offer_ends_on':
+            listingOfferEndsOn?.toIso8601String().substring(0, 10) ?? '',
+      };
+
+  factory BusinessSettings.fromMap(Map<String, String> m) {
+    num? n(String k) => num.tryParse(m[k]?.trim() ?? '');
+    String? t(String k) {
+      final v = m[k]?.trim();
+      return (v == null || v.isEmpty) ? null : v;
+    }
+
+    bool b(String k, bool fallback) {
+      final v = t(k)?.toLowerCase();
+      if (v == null) return fallback;
+      return const {'true', '1', 'yes', 'on'}.contains(v);
+    }
+
+    const d = BusinessSettings();
+    return BusinessSettings(
+      huntingFee: n('hunting_fee') ?? d.huntingFee,
+      huntingFeeCurrency: t('hunting_fee_currency') ?? d.huntingFeeCurrency,
+      huntingUnlocksContacts: b('hunting_fee_unlocks_contacts', d.huntingUnlocksContacts),
+      contactUnlockFee: n('contact_unlock_fee') ?? d.contactUnlockFee,
+      landlordListingFee: n('landlord_listing_fee') ?? d.landlordListingFee,
+      listingOfferLabel: t('landlord_listing_fee_offer_label') ?? d.listingOfferLabel,
+      listingOfferEndsOn: DateTime.tryParse(t('landlord_listing_fee_offer_ends_on') ?? ''),
+    );
+  }
+}
+
+/// The tenant's house hunting service:
+/// unpaid → payment_pending → service_active → matched → completed.
+class HuntingService {
+  const HuntingService({this.status = 'unpaid', this.activatedAt, this.matchedPropertyId});
+
+  final String status;
+  final DateTime? activatedAt;
+  final String? matchedPropertyId;
+
+  static const none = HuntingService();
+
+  bool get isActive => const {'paid', 'service_active', 'matched'}.contains(status);
+  bool get isPending => status == 'payment_pending';
+  bool get isCompleted => status == 'completed';
+
+  String get label => switch (status) {
+        'payment_pending' => 'Payment pending',
+        'paid' || 'service_active' => 'Active',
+        'matched' => 'Matched with a home',
+        'completed' => 'Completed — you moved in',
+        _ => 'Not started',
+      };
+
+  factory HuntingService.fromMap(Map<String, dynamic> map) => HuntingService(
+        status: (map['status'] as String?) ?? 'unpaid',
+        activatedAt: _date(map['activated_at']),
+        matchedPropertyId: map['matched_property_id'] as String?,
+      );
+}
+
+/// "Notify me": one exact home, or a standing search.
+class PropertyInterest {
+  const PropertyInterest({
+    required this.id,
+    this.propertyId,
+    this.propertyTypeId,
+    this.locationId,
+    this.minPrice,
+    this.maxPrice,
+    this.bedrooms,
+    this.availableWithinDays,
+    this.status = 'active',
+    this.createdAt,
+    this.lastNotifiedAt,
+    this.property,
+    this.typeName,
+    this.locationName,
+  });
+
+  final String id;
+  final String? propertyId;
+  final String? propertyTypeId;
+  final String? locationId;
+  final num? minPrice;
+  final num? maxPrice;
+  final int? bedrooms;
+  final int? availableWithinDays;
+  final String status;
+  final DateTime? createdAt;
+  final DateTime? lastNotifiedAt;
+  final Property? property;
+  final String? typeName;
+  final String? locationName;
+
+  bool get isForProperty => propertyId != null;
+  bool get isActive => status == 'active';
+
+  /// "1-bedroom Apartment in Makutano, up to KSh 20,000"
+  String get summary {
+    final what = [
+      if (bedrooms != null) bedrooms == 0 ? 'Studio' : '$bedrooms-bedroom',
+      typeName ?? (bedrooms == null ? 'Any home' : 'home'),
+    ].join(' ');
+
+    final parts = <String>[what];
+    if (locationName != null) parts.add('in $locationName');
+    if (minPrice != null && maxPrice != null) {
+      parts.add('${formatPrice(minPrice!)}–${formatPrice(maxPrice!)}');
+    } else if (maxPrice != null) {
+      parts.add('up to ${formatPrice(maxPrice!)}');
+    } else if (minPrice != null) {
+      parts.add('from ${formatPrice(minPrice!)}');
+    }
+    if (availableWithinDays != null) parts.add('free within $availableWithinDays days');
+    return parts.join(', ');
+  }
+
+  factory PropertyInterest.fromMap(Map<String, dynamic> map) {
+    final property = map['property'];
+    final type = map['property_type'];
+    final location = map['location'];
+    return PropertyInterest(
+      id: map['id'] as String,
+      propertyId: map['property_id'] as String?,
+      propertyTypeId: map['property_type_id'] as String?,
+      locationId: map['location_id'] as String?,
+      minPrice: map['min_price'] == null ? null : _num(map['min_price']),
+      maxPrice: map['max_price'] == null ? null : _num(map['max_price']),
+      bedrooms: map['bedrooms'] == null ? null : _int(map['bedrooms']),
+      availableWithinDays:
+          map['available_within_days'] == null ? null : _int(map['available_within_days']),
+      status: (map['status'] as String?) ?? 'active',
+      createdAt: _date(map['created_at']),
+      lastNotifiedAt: _date(map['last_notified_at']),
+      property: property is Map<String, dynamic> ? Property.fromMap(property) : null,
+      typeName: type is Map<String, dynamic> ? type['name'] as String? : null,
+      locationName: location is Map<String, dynamic> ? location['name'] as String? : null,
+    );
+  }
+}
+
+/// What a person wants to hear about, and how.
+class NotificationPreferences {
+  const NotificationPreferences({
+    this.inApp = true,
+    this.email = true,
+    this.sms = false,
+    this.availabilityAlerts = true,
+    this.requestUpdates = true,
+  });
+
+  final bool inApp;
+  final bool email;
+  final bool sms;
+  final bool availabilityAlerts;
+  final bool requestUpdates;
+
+  NotificationPreferences copyWith({
+    bool? inApp,
+    bool? email,
+    bool? sms,
+    bool? availabilityAlerts,
+    bool? requestUpdates,
+  }) =>
+      NotificationPreferences(
+        inApp: inApp ?? this.inApp,
+        email: email ?? this.email,
+        sms: sms ?? this.sms,
+        availabilityAlerts: availabilityAlerts ?? this.availabilityAlerts,
+        requestUpdates: requestUpdates ?? this.requestUpdates,
+      );
+
+  Map<String, dynamic> toRow() => {
+        'in_app': inApp,
+        'email': email,
+        'sms': sms,
+        'availability_alerts': availabilityAlerts,
+        'request_updates': requestUpdates,
+      };
+
+  factory NotificationPreferences.fromMap(Map<String, dynamic> map) => NotificationPreferences(
+        inApp: map['in_app'] != false,
+        email: map['email'] != false,
+        sms: map['sms'] == true,
+        availabilityAlerts: map['availability_alerts'] != false,
+        requestUpdates: map['request_updates'] != false,
+      );
+}
+
+/// Someone waiting on, or saving, one of a landlord's homes. First name only.
+class InterestedTenant {
+  const InterestedTenant({required this.firstName, required this.kind, this.since});
+
+  final String firstName;
+  final String kind; // waiting | saved
+  final DateTime? since;
+
+  factory InterestedTenant.fromMap(Map<String, dynamic> map) => InterestedTenant(
+        firstName: (map['first_name'] as String?) ?? 'A tenant',
+        kind: (map['kind'] as String?) ?? 'saved',
+        since: _date(map['since']),
+      );
 }

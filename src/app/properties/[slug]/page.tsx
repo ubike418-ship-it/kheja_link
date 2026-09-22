@@ -25,6 +25,7 @@ import { getPropertyBySlug, getSimilarProperties, recordPropertyView } from "@/l
 import { getFavoriteIds, withFavoriteState } from "@/lib/queries/favorites";
 import { getCurrentProfile, getCurrentUser } from "@/lib/supabase/server";
 import {
+  availabilityLabel,
   formatLocation,
   formatRelativeDate,
   formatRent,
@@ -88,6 +89,7 @@ export default async function PropertyDetailPage({ params }: { params: Params })
     `Hi, I saw "${property.title}" on Kheja_Link. Is it still available?`,
   );
   const size = formatSize(property.size_sqft);
+  const availability = availabilityLabel(property.availability, property.available_from);
 
   const facts = [
     property.bedrooms > 0 && { icon: BedDouble, label: "Bedrooms", value: String(property.bedrooms) },
@@ -148,6 +150,19 @@ export default async function PropertyDetailPage({ params }: { params: Params })
                 {property.is_furnished && (
                   <span className="px-4 py-2 bg-emerald-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest">
                     Furnished
+                  </span>
+                )}
+                {availability && (
+                  <span
+                    className={`px-4 py-2 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest ${
+                      availability.tone === "purple"
+                        ? "bg-purple-600"
+                        : availability.tone === "amber"
+                          ? "bg-orange-600"
+                          : "bg-zinc-600"
+                    }`}
+                  >
+                    {availability.label}
                   </span>
                 )}
               </div>

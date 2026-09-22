@@ -11,10 +11,11 @@ import 'states.dart';
 /// Each rail scrolls horizontally and is sized so roughly three tiles are
 /// visible at once, with the fourth peeking to signal there is more.
 ///
-/// Each company shows its own logo, fetched from its own site and hosted in
-/// our storage. Where no usable logo exists the tile falls back to the
-/// company's initials in its brand colour. None of these companies is a
-/// Kheja_Link partner, and the disclaimer under the rails says so.
+/// Only providers the Kheja_Link team has onboarded and approved come back
+/// from the database (partners, 0012) — today that is MoveMate Kenya, our
+/// moving partner. A section with a single provider shows one full-width card
+/// rather than a lonely rail. Logos come bundled with the app where we have
+/// them, otherwise from storage, otherwise the company's initials.
 class PartnerRails extends StatelessWidget {
   const PartnerRails({super.key, required this.partners});
 
@@ -58,14 +59,21 @@ class PartnerRails extends StatelessWidget {
         for (final s in sections) ...[
           _RailHeader(title: s.section.title, blurb: s.section.blurb),
           const SizedBox(height: 12),
-          _Rail(items: s.items),
+          if (s.items.length == 1)
+            _ProviderCard(partner: s.items.single)
+          else
+            _Rail(items: s.items),
           const SizedBox(height: 26),
         ],
         Text(
-          'Movement is our own service. The other companies are independent '
-          'businesses listed for your convenience — Kheja_Link is not affiliated '
-          'with them, takes no commission, and is not responsible for their '
-          'service. Logos belong to their owners.',
+          partners.every((p) => p.isOurs)
+              ? '${partners.map((p) => p.name).join(', ')} '
+                  '${partners.length == 1 ? 'is a Kheja_Link partner' : 'are Kheja_Link partners'}. '
+                  'Their prices are agreed with them directly and are separate from '
+                  'your rent and the house hunting fee.'
+              : 'Partners are marked. Other companies are independent businesses '
+                  'listed for your convenience — Kheja_Link is not responsible for '
+                  'their service. Logos belong to their owners.',
           style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w500,
@@ -135,23 +143,7 @@ class _PartnerTile extends StatelessWidget {
   final Partner partner;
   final double width;
 
-  Future<void> _open(BuildContext context) async {
-    final target = partner.url ??
-        (partner.phone != null ? 'tel:${partner.phone}' : null);
-
-    if (target == null) {
-      showKhejaSnack(
-        context,
-        '${partner.name} has not shared contact details yet.',
-      );
-      return;
-    }
-
-    final ok = await launchUrl(Uri.parse(target), mode: LaunchMode.externalApplication);
-    if (!ok && context.mounted) {
-      showKhejaSnack(context, 'Could not open ${partner.name}.', isError: true);
-    }
-  }
+  Future<void> _open(BuildContext context) => _contactPartner(context, partner);
 
   @override
   Widget build(BuildContext context) {
@@ -182,7 +174,15 @@ class _PartnerTile extends StatelessWidget {
                   ),
                 ),
                 clipBehavior: Clip.antiAlias,
-                child: partner.logoUrl != null
+                child: partner.bundledLogoAsset != null
+                    ? ColoredBox(
+                        color: Colors.white,
+                        child: Padding(
+                          padding: EdgeInsets.all(width * 0.06),
+                          child: Image.asset(partner.bundledLogoAsset!, fit: BoxFit.contain),
+                        ),
+                      )
+                    : partner.logoUrl != null
                     // Real logos sit on white with breathing room, like an app
                     // icon. Several companies only publish a small icon, and
                     // stretching one edge to edge would leave it blurred.
@@ -213,7 +213,7 @@ class _PartnerTile extends StatelessWidget {
           ),
           if (partner.isOurs)
             Text(
-              'OURS',
+              'PARTNER',
               style: kEyebrowStyle.copyWith(color: brand, fontSize: 8),
             ),
         ],
@@ -260,4 +260,124 @@ class _PartnerTile extends StatelessWidget {
         'cleaning' => Icons.cleaning_services_rounded,
         _ => Icons.storefront_rounded,
       };
+}
+
+Future<void> _contactPartner(BuildContext context, Partner partner, {bool call = false}) async {
+  final phone = partner.phone;
+  final target = call && phone != null
+      ? 'tel:$phone'
+      : partner.url ?? (phone != null ? 'tel:$phone' : null);
+
+  if (target == null) {
+    showKhejaSnack(context, '${partner.name} has not shared contact details yet.');
+    return;
+  }
+
+  final ok = await launchUrl(Uri.parse(target), mode: LaunchMode.externalApplication);
+  if (!ok && context.mounted) {
+    showKhejaSnack(context, 'Could not open ${partner.name}.', isError: true);
+  }
+}
+
+/// A section with one provider: a full-width card with the logo big enough to
+/// read, and a direct call button.
+class _ProviderCard extends StatelessWidget {
+  const _ProviderCard({required this.partner});
+
+  final Partner partner;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final brand = Color(partner.colorValue);
+
+    final Widget logo;
+    if (partner.bundledLogoAsset != null) {
+      logo = Image.asset(partner.bundledLogoAsset!, fit: BoxFit.contain);
+    } else if (partner.logoUrl != null) {
+      logo = CachedNetworkImage(
+        imageUrl: partner.logoUrl!,
+        fit: BoxFit.contain,
+        errorWidget: (_, __, ___) => Icon(Icons.local_shipping_rounded, color: brand),
+      );
+    } else {
+      logo = Center(
+        child: Text(
+          partner.initials,
+          style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: brand),
+        ),
+      );
+    }
+
+    return Material(
+      color: theme.colorScheme.surface,
+      borderRadius: BorderRadius.circular(KhejaRadius.xl),
+      child: InkWell(
+        onTap: () => _contactPartner(context, partner),
+        borderRadius: BorderRadius.circular(KhejaRadius.xl),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(KhejaRadius.xl),
+            border: Border.all(
+              color: partner.isOurs ? brand.withValues(alpha: 0.5) : theme.colorScheme.outline,
+              width: partner.isOurs ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 84,
+                height: 84,
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(KhejaRadius.md),
+                  border: Border.all(color: theme.colorScheme.outline),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: logo,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (partner.isOurs)
+                      Text('KHEJA_LINK PARTNER',
+                          style: kEyebrowStyle.copyWith(color: brand, fontSize: 9)),
+                    const SizedBox(height: 2),
+                    Text(
+                      partner.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium,
+                    ),
+                    if (partner.tagline != null)
+                      Text(
+                        partner.tagline!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: KhejaColors.zinc500,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              if (partner.phone != null)
+                IconButton.filled(
+                  onPressed: () => _contactPartner(context, partner, call: true),
+                  style: IconButton.styleFrom(backgroundColor: brand),
+                  tooltip: 'Call ${partner.name}',
+                  icon: const Icon(Icons.call_rounded, color: Colors.white),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

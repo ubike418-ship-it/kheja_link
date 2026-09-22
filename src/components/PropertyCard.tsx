@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { toggleFavoriteAction } from "@/lib/actions/favorites";
-import { formatLocation, formatRent, formatSize, normalisePhone } from "@/lib/format";
+import { availabilityLabel, formatLocation, formatRent, formatSize, normalisePhone } from "@/lib/format";
 import type { PropertyListItem } from "@/lib/types";
 
 const FALLBACK_IMAGE =
@@ -23,6 +23,7 @@ export default function PropertyCard({ property }: { property: PropertyListItem 
   const size = formatSize(property.size_sqft);
   const phone = normalisePhone(property.contact_phone);
   const href = `/properties/${property.slug}`;
+  const availability = availabilityLabel(property.availability, property.available_from);
 
   const handleToggleFavorite = (event: React.MouseEvent) => {
     event.preventDefault();
@@ -76,6 +77,19 @@ export default function PropertyCard({ property }: { property: PropertyListItem 
             {property.is_premium && (
               <span className="px-3 py-2 bg-amber-500/90 backdrop-blur-xl rounded-2xl text-[10px] font-black text-white uppercase tracking-widest">
                 Premium
+              </span>
+            )}
+            {availability && (
+              <span
+                className={`px-3 py-2 backdrop-blur-xl rounded-2xl text-[10px] font-black text-white uppercase tracking-widest ${
+                  availability.tone === "purple"
+                    ? "bg-purple-600/90"
+                    : availability.tone === "amber"
+                      ? "bg-orange-600/90"
+                      : "bg-zinc-700/90"
+                }`}
+              >
+                {availability.label}
               </span>
             )}
           </div>

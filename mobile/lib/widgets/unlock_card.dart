@@ -20,12 +20,17 @@ class UnlockCard extends StatefulWidget {
     required this.contact,
     required this.onUnlocked,
     required this.onRequireSignIn,
+    this.onHuntingFee,
   });
 
   final Property property;
   final PropertyContact contact;
   final Future<void> Function() onUnlocked;
   final Future<bool> Function() onRequireSignIn;
+
+  /// Opens the house hunting fee, which (when configured) unlocks every
+  /// listing at once. Null hides the option.
+  final Future<void> Function()? onHuntingFee;
 
   @override
   State<UnlockCard> createState() => _UnlockCardState();
@@ -366,6 +371,17 @@ class _UnlockCardState extends State<UnlockCard> {
             ),
           ],
 
+          if (widget.onHuntingFee != null) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton.icon(
+                onPressed: _busy ? null : widget.onHuntingFee,
+                icon: const Icon(Icons.travel_explore_rounded, size: 18),
+                label: const Text('Or use the House Hunting service — unlocks every home'),
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           Text(
             'Pays for itself once: unlock this home and the details stay yours. '

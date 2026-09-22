@@ -186,6 +186,11 @@ export default function Navbar({ onCategorySelect, profile }: NavbarProps) {
                           </MenuLink>
                         </>
                       )}
+                      {profile.role === "admin" && (
+                        <MenuLink href="/admin" icon={LayoutDashboard} onNavigate={() => setIsAccountOpen(false)}>
+                          Admin
+                        </MenuLink>
+                      )}
                       <MenuLink href="/favorites" icon={Heart} onNavigate={() => setIsAccountOpen(false)}>
                         Saved homes
                       </MenuLink>

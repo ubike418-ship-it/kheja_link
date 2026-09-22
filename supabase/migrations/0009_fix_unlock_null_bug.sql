@@ -19,6 +19,10 @@
 
 set search_path = public, extensions;
 
+-- A later migration changes this function's return shape, which
+-- `create or replace` cannot undo on a re-run.
+drop function if exists public.get_property_contact(uuid);
+
 create or replace function public.get_property_contact(p_property_id uuid)
 returns table (
   unlocked         boolean,

@@ -12,9 +12,13 @@ import '../widgets/property_card.dart';
 import '../widgets/partner_rails.dart';
 import '../widgets/states.dart';
 import '../widgets/unlock_card.dart';
+import '../widgets/kheja_sheet.dart';
 import '../widgets/video_player_view.dart';
 import 'auth_screen.dart';
+import 'availability_sheet.dart';
+import 'hunting_screen.dart';
 import 'inquiry_sheet.dart';
+import 'request_sheet.dart';
 
 /// The full listing: photo gallery, key facts, description, amenities,
 /// location, the landlord's contact options and similar homes.
@@ -33,6 +37,8 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   List<Partner> _partners = const [];
   PropertyContact _contact = PropertyContact.locked;
   Tenancy? _myTenancy;
+  PropertyInterest? _myInterest;
+  bool _watchBusy = false;
   bool _isLoading = true;
   String? _error;
   int _imageIndex = 0;
@@ -80,8 +86,9 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
       final rest = await Future.wait([
         khejaApi.fetchSimilar(property),
         khejaApi.fetchPropertyContact(property.id),
-        khejaApi.fetchPartners(),
-        khejaApi.fetchMyTenancyFor(property.id),
+        khejaApi.fetchPartners().catchError((_) => <Partner>[]),
+        khejaApi.fetchMyTenancyFor(property.id).catchError((_) => null),
+        khejaApi.fetchInterestFor(property.id),
       ]);
 
       if (!mounted) return;
@@ -90,6 +97,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
         _contact = rest[1] as PropertyContact;
         _partners = rest[2] as List<Partner>;
         _myTenancy = rest[3] as Tenancy?;
+        _myInterest = rest[4] as PropertyInterest?;
       });
     } catch (error) {
       if (!mounted) return;
@@ -143,45 +151,55 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     return signedIn;
   }
 
-  Future<void> _book(Property property) async {
+  bool _isOwner(Property property) => khejaApi.currentUser?.id == property.ownerId;
+
+  Future<void> _request(Property property) async {
     if (!khejaApi.isSignedIn && !await _requireSignIn()) return;
+    if (!mounted) return;
+    final sent = await showKhejaSheet<bool>(context, RequestSheet(property: property));
+    if (sent != true || !mounted) return;
+    final tenancy = await khejaApi.fetchMyTenancyFor(property.id).catchError((_) => null);
+    if (!mounted) return;
+    setState(() => _myTenancy = tenancy);
+    showKhejaSnack(context, 'Request sent. The landlord has been notified.');
+  }
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(KhejaRadius.lg),
-        ),
-        title: const Text('Book this home?'),
-        content: Text(
-          'This tells the landlord you intend to move into ${property.title}. '
-          'It is not a payment, and it does not replace seeing the house first.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Book'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-
+  /// "Notify me when this home is available."
+  Future<void> _toggleWatch(Property property) async {
+    if (!khejaApi.isSignedIn && !await _requireSignIn()) return;
+    setState(() => _watchBusy = true);
     try {
-      await khejaApi.bookProperty(property.id);
-      final tenancy = await khejaApi.fetchMyTenancyFor(property.id);
-      if (!mounted) return;
-      setState(() => _myTenancy = tenancy);
-      showKhejaSnack(context, 'Booked. The landlord has been notified.');
+      final current = _myInterest;
+      if (current != null) {
+        await khejaApi.cancelInterest(current.id);
+        if (!mounted) return;
+        setState(() => _myInterest = null);
+        showKhejaSnack(context, 'You will no longer be notified about this home.');
+      } else {
+        await khejaApi.watchProperty(property.id);
+        final interest = await khejaApi.fetchInterestFor(property.id);
+        if (!mounted) return;
+        setState(() => _myInterest = interest);
+        showKhejaSnack(context, 'Done. We will notify you when this home is available.');
+      }
     } catch (error) {
       if (!mounted) return;
       showKhejaSnack(context, describeError(error), isError: true);
+    } finally {
+      if (mounted) setState(() => _watchBusy = false);
     }
+  }
+
+  Future<void> _setAvailability(Property property) async {
+    final saved = await showKhejaSheet<bool>(context, AvailabilitySheet(property: property));
+    if (saved == true && mounted) {
+      showKhejaSnack(context, 'Availability updated.');
+      await _load();
+    }
+  }
+
+  Future<void> _withdraw() async {
+    await _setTenancy('cancelled', 'Request withdrawn. The landlord has been told.');
   }
 
   Future<void> _setTenancy(String status, String message) async {
@@ -189,7 +207,8 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     if (tenancy == null) return;
     try {
       await khejaApi.setTenancyStatus(tenancy.id, status);
-      final updated = await khejaApi.fetchMyTenancyFor(tenancy.propertyId);
+      final updated =
+          await khejaApi.fetchMyTenancyFor(tenancy.propertyId).catchError((_) => null);
       if (!mounted) return;
       setState(() => _myTenancy = updated);
       showKhejaSnack(context, message);
@@ -259,6 +278,15 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                   ),
                   const SizedBox(height: 22),
                   _RentCard(property: property),
+                  if (!property.isAvailableNow && !_isOwner(property)) ...[
+                    const SizedBox(height: 14),
+                    _AvailabilityPanel(
+                      property: property,
+                      watching: _myInterest != null,
+                      busy: _watchBusy,
+                      onToggle: () => _toggleWatch(property),
+                    ),
+                  ],
                   const SizedBox(height: 26),
                   _Facts(property: property),
 
@@ -319,6 +347,12 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                     contact: _contact,
                     onUnlocked: _refreshContact,
                     onRequireSignIn: _requireSignIn,
+                    onHuntingFee: () async {
+                      await Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const HuntingScreen()),
+                      );
+                      await _refreshContact();
+                    },
                   ),
 
                   const SizedBox(height: 12),
@@ -332,18 +366,26 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                   ),
 
                   const SizedBox(height: 20),
-                  _TenancyCard(
-                    tenancy: _myTenancy,
-                    onBook: () => _book(property),
-                    onCheckIn: () => _setTenancy(
-                      'checked_in',
-                      'Checked in. The landlord has been told.',
+                  if (_isOwner(property))
+                    _OwnerCard(
+                      property: property,
+                      onSetAvailability: () => _setAvailability(property),
+                    )
+                  else
+                    _TenancyCard(
+                      tenancy: _myTenancy,
+                      canRequest: property.isRequestable,
+                      onRequest: () => _request(property),
+                      onWithdraw: _withdraw,
+                      onCheckIn: () => _setTenancy(
+                        'checked_in',
+                        'Welcome home! The landlord has been told.',
+                      ),
+                      onMoveOut: () => _setTenancy(
+                        'moved_out',
+                        'Moved out. The landlord has been told.',
+                      ),
                     ),
-                    onMoveOut: () => _setTenancy(
-                      'moved_out',
-                      'Moved out. The landlord has been told.',
-                    ),
-                  ),
 
                   const SizedBox(height: 22),
                   const _SafetyNote(),
@@ -976,16 +1018,22 @@ class _HouseRules extends StatelessWidget {
 
 /// Booking, checking in and moving out — the tenant's side of occupancy.
 /// Each step notifies the landlord.
+/// The tenant's side of a house request: send one, see where it stands, and
+/// take the next step. Only offered for a home that is free right now.
 class _TenancyCard extends StatelessWidget {
   const _TenancyCard({
     required this.tenancy,
-    required this.onBook,
+    required this.canRequest,
+    required this.onRequest,
+    required this.onWithdraw,
     required this.onCheckIn,
     required this.onMoveOut,
   });
 
   final Tenancy? tenancy;
-  final VoidCallback onBook;
+  final bool canRequest;
+  final VoidCallback onRequest;
+  final VoidCallback onWithdraw;
   final VoidCallback onCheckIn;
   final VoidCallback onMoveOut;
 
@@ -995,50 +1043,83 @@ class _TenancyCard extends StatelessWidget {
     final t = tenancy;
 
     if (t == null) {
+      if (!canRequest) return const SizedBox.shrink();
       return SizedBox(
         width: double.infinity,
-        child: OutlinedButton.icon(
-          onPressed: onBook,
-          icon: const Icon(Icons.event_available_rounded, size: 20),
-          label: const Text('Book this home'),
+        child: FilledButton.icon(
+          onPressed: onRequest,
+          style: FilledButton.styleFrom(
+            backgroundColor: KhejaColors.emerald,
+            minimumSize: const Size.fromHeight(56),
+          ),
+          icon: const Icon(Icons.how_to_reg_rounded, size: 20),
+          label: const Text('Request this house'),
         ),
       );
     }
 
+    final (color, icon, body) = switch (t.status) {
+      'booked' => (
+          KhejaColors.amber,
+          Icons.hourglass_top_rounded,
+          'Your request has been sent. We will tell you when the landlord responds.',
+        ),
+      'viewed' => (
+          KhejaColors.blue,
+          Icons.visibility_rounded,
+          'The landlord has seen your request.',
+        ),
+      'accepted' => (
+          KhejaColors.emerald,
+          Icons.check_circle_rounded,
+          'The landlord accepted. Arrange the viewing or the move with them, then tell '
+              'us when you move in.',
+        ),
+      _ => (
+          KhejaColors.emerald,
+          Icons.home_rounded,
+          'You are recorded as living here. Let us know when you move out.',
+        ),
+    };
+
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: KhejaColors.emerald.withValues(alpha: 0.08),
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(KhejaRadius.xl),
-        border: Border.all(color: KhejaColors.emerald.withValues(alpha: 0.3)),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.check_circle_rounded,
-                  size: 18, color: KhejaColors.emerald),
+              Icon(icon, size: 18, color: color),
               const SizedBox(width: 10),
-              Text(t.statusLabel, style: theme.textTheme.titleMedium),
+              Expanded(
+                child: Text('Your request: ${t.statusLabel}', style: theme.textTheme.titleMedium),
+              ),
             ],
           ),
           const SizedBox(height: 6),
           Text(
-            t.status == 'booked'
-                ? 'The landlord knows you intend to move in. Tell us when you '
-                    'actually do, so they can update the listing.'
-                : 'You are recorded as living here. Let us know when you move '
-                    'out and the home goes back on the market.',
+            body,
             style: const TextStyle(
-              fontSize: 12,
+              fontSize: 12.5,
               fontWeight: FontWeight.w500,
               color: KhejaColors.zinc500,
               height: 1.5,
             ),
           ),
+          if (t.landlordResponse != null && t.landlordResponse!.trim().isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Landlord: "${t.landlordResponse!.trim()}"',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, height: 1.4),
+            ),
+          ],
           const SizedBox(height: 14),
-          if (t.status == 'booked')
+          if (t.status == 'accepted')
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
@@ -1057,6 +1138,144 @@ class _TenancyCard extends StatelessWidget {
                 label: const Text('I have moved out'),
               ),
             ),
+          if (t.canWithdraw)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: onWithdraw,
+                style: TextButton.styleFrom(foregroundColor: KhejaColors.red),
+                child: const Text('Withdraw request'),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Shown instead of "Request" when the home is not free now: occupied, coming
+/// available, or temporarily off the market.
+class _AvailabilityPanel extends StatelessWidget {
+  const _AvailabilityPanel({
+    required this.property,
+    required this.watching,
+    required this.busy,
+    required this.onToggle,
+  });
+
+  final Property property;
+  final bool watching;
+  final bool busy;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = AvailabilityChip.colorFor(property.availability);
+    final from = property.availableFrom;
+
+    final (title, body) = switch (property.availability) {
+      'notice_given' => (
+          'Currently occupied',
+          from == null
+              ? 'This home is expected to become available soon.'
+              : 'Expected to be available from ${formatShortDate(from)}.',
+        ),
+      'unavailable' => (
+          'Temporarily unavailable',
+          'The landlord has taken this home off the market for now.',
+        ),
+      _ => (
+          'Currently occupied',
+          'Someone lives here at the moment. It cannot be requested yet.',
+        ),
+    };
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(KhejaRadius.xl),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.event_busy_rounded, color: color, size: 20),
+              const SizedBox(width: 10),
+              Expanded(child: Text(title, style: theme.textTheme.titleMedium)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            body,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: KhejaColors.zinc500, height: 1.45),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: watching
+                ? OutlinedButton.icon(
+                    onPressed: busy ? null : onToggle,
+                    icon: const Icon(Icons.notifications_active_rounded, size: 19),
+                    label: const Text("You'll be notified · Stop"),
+                  )
+                : FilledButton.icon(
+                    onPressed: busy ? null : onToggle,
+                    style: FilledButton.styleFrom(backgroundColor: color),
+                    icon: busy
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.notifications_rounded, size: 19),
+                    label: const Text('Notify me when available'),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The landlord looking at their own listing.
+class _OwnerCard extends StatelessWidget {
+  const _OwnerCard({required this.property, required this.onSetAvailability});
+
+  final Property property;
+  final VoidCallback onSetAvailability;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: KhejaColors.blue.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(KhejaRadius.xl),
+        border: Border.all(color: KhejaColors.blue.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('This is your listing', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            property.availabilityLabel ?? 'Shown to tenants as available now.',
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: KhejaColors.zinc500),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: onSetAvailability,
+              icon: const Icon(Icons.event_available_rounded, size: 19),
+              label: const Text('Set availability'),
+            ),
+          ),
         ],
       ),
     );

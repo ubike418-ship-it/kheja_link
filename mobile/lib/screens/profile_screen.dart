@@ -13,6 +13,11 @@ import 'auth_screen.dart';
 import 'role_select_screen.dart';
 import 'my_listings_screen.dart';
 import 'inquiries_screen.dart';
+import 'hunting_screen.dart';
+import 'my_requests_screen.dart';
+import 'notification_preferences_screen.dart';
+import 'tenant_requests_screen.dart';
+import '../services/role_switch.dart';
 
 /// The account tab. Signed out it invites you in; signed in it shows your
 /// profile and, for landlords, the way into listings and inquiries.
@@ -240,9 +245,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _Tile(
               icon: Icons.home_work_rounded,
               label: 'My listings',
-              subtitle: 'Publish, edit and retire your houses',
+              subtitle: 'Publish, edit, set availability and retire your houses',
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const MyListingsScreen()),
+              ),
+            ),
+            _Tile(
+              icon: Icons.inbox_rounded,
+              label: 'Tenant requests',
+              subtitle: 'Accept or decline requests for your homes',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const TenantRequestsScreen()),
               ),
             ),
             _Tile(
@@ -257,6 +270,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ],
 
 
+          if (!profile.isLandlord) ...[
+            Text('House hunting', style: theme.textTheme.titleLarge),
+            const SizedBox(height: 14),
+            _Tile(
+              icon: Icons.travel_explore_rounded,
+              label: 'House Hunting & payments',
+              subtitle: 'The house hunting fee and your service status',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const HuntingScreen()),
+              ),
+            ),
+            _Tile(
+              icon: Icons.inbox_rounded,
+              label: 'My requests',
+              subtitle: 'Requests, homes you are waiting for and alerts',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const MyRequestsScreen()),
+              ),
+            ),
+            _Tile(
+              icon: Icons.vpn_key_rounded,
+              label: 'List a property',
+              subtitle: 'Own a house? List it on Kheja_Link — free for now',
+              onTap: () => openListAHouse(context),
+            ),
+            const SizedBox(height: 28),
+          ],
+
           Text('Your details', style: theme.textTheme.titleLarge),
           const SizedBox(height: 14),
           _Tile(
@@ -264,6 +305,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
             label: 'Edit profile',
             subtitle: profile.phone ?? 'Add a phone number',
             onTap: () => _editProfile(profile),
+          ),
+          _Tile(
+            icon: Icons.notifications_rounded,
+            label: 'Notification preferences',
+            subtitle: 'In-app, email and SMS; which alerts you get',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const NotificationPreferencesScreen()),
+            ),
+          ),
+          _Tile(
+            icon: Icons.tour_rounded,
+            label: 'Show me around again',
+            subtitle: 'Replay the guided tour',
+            onTap: () => AppState.instance
+                .requestTutorial(profile.isLandlord ? 'landlord' : 'tenant'),
           ),
           const SizedBox(height: 28),
 
@@ -279,23 +335,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ],
       ),
     );
-  }
-
-  Future<void> _becomeLandlord(Profile profile) async {
-    try {
-      await khejaApi.updateProfile(
-        fullName: profile.fullName ?? '',
-        phone: profile.phone,
-        bio: profile.bio,
-        role: 'landlord',
-      );
-      if (!mounted) return;
-      showKhejaSnack(context, 'You can now list houses on Kheja_Link.');
-      _reload();
-    } catch (error) {
-      if (!mounted) return;
-      showKhejaSnack(context, describeError(error), isError: true);
-    }
   }
 
   Future<void> _editProfile(Profile profile) async {

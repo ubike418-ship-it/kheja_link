@@ -7,6 +7,7 @@ import { getMyProperties } from "@/lib/queries/properties";
 import { getCurrentProfile } from "@/lib/supabase/server";
 import { formatLocation, formatRelativeDate, formatRent } from "@/lib/format";
 import PropertyStatusControl from "@/components/PropertyStatusControl";
+import PropertyAvailabilityControl from "@/components/PropertyAvailabilityControl";
 import StatusPill from "@/components/StatusPill";
 
 export const metadata: Metadata = {
@@ -95,6 +96,11 @@ export default async function MyPropertiesPage() {
 
               <div className="flex flex-wrap items-center gap-3 shrink-0">
                 <PropertyStatusControl propertyId={property.id} status={property.status} />
+                <PropertyAvailabilityControl
+                  propertyId={property.id}
+                  availability={property.availability}
+                  availableFrom={property.available_from}
+                />
                 <Link
                   href={`/dashboard/properties/${property.id}/edit`}
                   className="flex items-center gap-2 px-5 h-12 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-2xl text-sm font-black hover:scale-[1.02] transition-transform"

@@ -8,6 +8,9 @@ import '../models/models.dart';
 import '../services/kheja_api.dart';
 import '../widgets/property_card.dart';
 import '../widgets/states.dart';
+import '../widgets/kheja_sheet.dart';
+import 'alert_sheet.dart';
+import 'auth_screen.dart';
 import 'filter_sheet.dart';
 import 'property_detail_screen.dart';
 
@@ -246,6 +249,21 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
+  /// Saves the current search as an alert: "tell me when a home like this
+  /// becomes available".
+  Future<void> _alertMe() async {
+    if (!khejaApi.isSignedIn) {
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const AuthScreen(role: 'seeker')),
+      );
+      if (!mounted || !khejaApi.isSignedIn) return;
+    }
+    final saved = await showKhejaSheet<bool>(context, SearchAlertSheet(initial: _filters));
+    if (saved == true && mounted) {
+      showKhejaSnack(context, 'Alert saved. We will tell you when a matching home is available.');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final activeCount = _filters.activeCount;
@@ -257,7 +275,12 @@ class _SearchScreenState extends State<SearchScreen> {
         actions: [
           if (activeCount > 0)
             TextButton(onPressed: _clearFilters, child: const Text('Clear')),
-          const SizedBox(width: 8),
+          IconButton(
+            onPressed: _alertMe,
+            tooltip: 'Notify me about homes like these',
+            icon: const Icon(Icons.add_alert_rounded),
+          ),
+          const SizedBox(width: 4),
         ],
       ),
       body: Column(

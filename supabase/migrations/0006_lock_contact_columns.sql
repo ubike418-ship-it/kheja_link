@@ -60,6 +60,10 @@ grant delete on public.properties to authenticated;
 -- A landlord managing a listing needs to read back what they wrote. RLS already
 -- limits this to rows they own.
 -- -----------------------------------------------------------------------------
+-- A later migration changes this function's return shape, which
+-- `create or replace` cannot undo on a re-run.
+drop function if exists public.get_my_property_private(uuid);
+
 create or replace function public.get_my_property_private(p_property_id uuid)
 returns table (
   contact_phone    text,

@@ -183,32 +183,34 @@ void marketplaceTests(KhejaApi Function() apiOf, bool configured) {
   final skip = configured ? null : 'Supabase credentials not set';
 
   group('partner directory', () {
-    test('all three rails are populated', () async {
+    test('MoveMate Kenya is the movers partner', () async {
       final partners = await apiOf().fetchPartners();
-      expect(partners, isNotEmpty);
+      final movers = partners.where((p) => p.category == 'movers').toList();
 
-      for (final category in ['movers', 'isp', 'cleaning']) {
-        expect(
-          partners.where((p) => p.category == category),
-          isNotEmpty,
-          reason: 'the $category rail is empty',
-        );
+      expect(movers.map((p) => p.slug), contains('movemate-kenya'));
+      expect(movers.firstWhere((p) => p.slug == 'movemate-kenya').isOurs, isTrue);
+    }, skip: skip);
+
+    test('only onboarded partners are shown', () async {
+      // Companies Kheja_Link has no agreement with were taken off in 0012 and
+      // can only come back through the admin approval step.
+      final slugs = (await apiOf().fetchPartners()).map((p) => p.slug).toSet();
+      for (final notPartner in ['nellions', 'cube-movers', 'movement']) {
+        expect(slugs, isNot(contains(notPartner)));
       }
     }, skip: skip);
 
-    test('our own mover is flagged, and every logo is self-hosted', () async {
-      final partners = await apiOf().fetchPartners();
-
-      final ours = partners.where((p) => p.isOurs).toList();
-      expect(ours, hasLength(1));
-      expect(ours.first.name, 'Movement');
-
-      // Logos must come from our own storage, never hotlinked from the company:
-      // a hotlink breaks the moment they redesign their site.
-      for (final p in partners.where((p) => p.logoUrl != null)) {
+    test('every logo is self-hosted', () async {
+      // Our storage or our own site — never hotlinked from the company, which
+      // breaks the moment they redesign.
+      for (final p in (await apiOf().fetchPartners()).where((p) => p.logoUrl != null)) {
         expect(p.logoUrl, startsWith('https://'));
-        expect(p.logoUrl, contains('/storage/v1/object/public/partner-logos/'),
-            reason: '${p.name} logo is not self-hosted');
+        expect(
+          p.logoUrl!.contains('/storage/v1/object/public/partner-logos/') ||
+              p.logoUrl!.contains('khejalink.name.ng/'),
+          isTrue,
+          reason: '${p.name} logo is not self-hosted',
+        );
       }
     }, skip: skip);
 
@@ -426,9 +428,14 @@ void release12Tests(KhejaApi Function() apiOf, bool configured) {
     }, skip: skip);
 
     test('the management number is not in a readable table', () async {
-      // app_settings has RLS on and no policies: anon must get nothing.
-      final rows = await rawClient().from('app_settings').select().limit(5);
-      expect(rows, isEmpty);
+      // Since 0012, public business rules (fees, flags) are readable; the
+      // private rows — the management line — must still never come back.
+      final rows = await rawClient().from('app_settings').select('key, value');
+      final keys = rows.map((r) => r['key']).toSet();
+      expect(keys, contains('hunting_fee'));
+      expect(keys, isNot(contains('management_phone')));
+      expect(keys, isNot(contains('management_name')));
+      expect(rows.map((r) => r['value']), isNot(contains('+254710655709')));
     }, skip: skip);
   });
 

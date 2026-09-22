@@ -44,7 +44,9 @@ class SupabaseConfig {
   ///   flutter build apk --dart-define=SITE_URL=https://staging.example.com
   static const siteUrl = String.fromEnvironment(
     'SITE_URL',
-    defaultValue: 'https://khejalink.name.ng',
+    // The www host: the bare domain answers with a 308 redirect, and a POST
+    // (starting a payment) is not followed across a redirect.
+    defaultValue: 'https://www.khejalink.name.ng',
   );
 
   /// Deep link Supabase sends users back to after they confirm their email.

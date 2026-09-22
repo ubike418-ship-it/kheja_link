@@ -75,6 +75,10 @@ class PropertyCard extends StatelessWidget {
                         ),
                       ],
                     ),
+                    if (property.availabilityLabel != null) ...[
+                      const SizedBox(height: 10),
+                      AvailabilityChip(property: property),
+                    ],
                     const SizedBox(height: 16),
                     Divider(color: scheme.outline, height: 1),
                     const SizedBox(height: 16),
@@ -85,6 +89,55 @@ class PropertyCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// "Currently occupied", "Available from 15 Oct"… Draws nothing for a home
+/// that is free now.
+class AvailabilityChip extends StatelessWidget {
+  const AvailabilityChip({super.key, required this.property});
+
+  final Property property;
+
+  static Color colorFor(String availability) => switch (availability) {
+        'notice_given' => KhejaColors.purple,
+        'occupied' => const Color(0xFFEA580C),
+        'unavailable' => KhejaColors.zinc500,
+        _ => KhejaColors.emerald,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final label = property.availabilityLabel;
+    if (label == null) return const SizedBox.shrink();
+    final color = colorFor(property.availability);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(KhejaRadius.sm),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            property.isComingAvailable ? Icons.event_rounded : Icons.do_not_disturb_on_rounded,
+            size: 13,
+            color: color,
+          ),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label.toUpperCase(),
+              overflow: TextOverflow.ellipsis,
+              style: kEyebrowStyle.copyWith(color: color, letterSpacing: 1.2),
+            ),
+          ),
+        ],
       ),
     );
   }

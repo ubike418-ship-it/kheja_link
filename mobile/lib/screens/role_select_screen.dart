@@ -3,29 +3,27 @@ import 'package:flutter/material.dart';
 import '../config/app_state.dart';
 import '../config/theme.dart';
 import '../widgets/brand.dart';
-import 'auth_screen.dart';
+import 'airbnb_soon_screen.dart';
+import 'app_shell.dart';
 
-/// The front door: tenant or landlord.
+/// The front door: three clear ways in.
 ///
-/// These are two different people doing two different jobs, so they get two
-/// different doors, two different sign-in screens and two different apps once
-/// inside. Choosing here decides which sign-in screen appears and what a
-/// signed-out visitor sees. Once someone signs in, the role stored on their
-/// account decides — so a landlord who wanders through the tenant door still
-/// lands in the landlord app.
+///   Tenant    find a home
+///   Landlord  list and manage property
+///   Stays     short-term stays — coming soon, and only a coming-soon page
+///
+/// Choosing tenant or landlord goes straight into that app, where a short
+/// guided tour runs the first time. Signing in happens when it is needed (to
+/// save, request or list), not as a wall at the door. Once someone signs in,
+/// the role on their account decides which app they see.
 class RoleSelectScreen extends StatelessWidget {
   const RoleSelectScreen({super.key});
 
   Future<void> _choose(BuildContext context, String role) async {
     await AppState.instance.setChosenRole(role);
     if (!context.mounted) return;
-
-    // Straight to the sign-in screen for that role. Signing in is where the
-    // two paths genuinely diverge, so we do not make people hunt for it.
     await Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (_) => AuthScreen(role: role, isEntryPoint: true),
-      ),
+      MaterialPageRoute(builder: (_) => const AppShell()),
     );
   }
 
@@ -35,62 +33,75 @@ class RoleSelectScreen extends StatelessWidget {
 
     return Scaffold(
       body: SafeArea(
-        child: Padding(
+        child: ListView(
           padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Center(child: LogoLockup(width: 190)),
-              const SizedBox(height: 34),
-              Text('Who are you?', style: theme.textTheme.displaySmall),
-              const SizedBox(height: 10),
-              Text(
-                'Kheja_Link works differently for people looking for a home and for '
-                'people renting one out.',
-                style: theme.textTheme.bodyLarge
-                    ?.copyWith(color: KhejaColors.zinc500, height: 1.5),
-              ),
-              const SizedBox(height: 30),
+          children: [
+            const Center(child: LogoLockup(width: 190)),
+            const SizedBox(height: 30),
+            Text('Welcome to Kheja_Link', style: theme.textTheme.displaySmall),
+            const SizedBox(height: 10),
+            Text(
+              'What brings you here? We will show you around.',
+              style: theme.textTheme.bodyLarge
+                  ?.copyWith(color: KhejaColors.zinc500, height: 1.5),
+            ),
+            const SizedBox(height: 26),
 
-              _RoleCard(
-                icon: Icons.search_rounded,
-                accent: KhejaColors.blue,
-                title: "I'm a tenant",
-                subtitle: 'Looking for a place to rent',
-                points: const [
-                  'Search and filter every home in Meru',
-                  'Save homes and get told when one frees up',
-                  'Unlock the landlord\'s number and the exact location',
-                ],
-                onTap: () => _choose(context, 'seeker'),
+            _RoleCard(
+              icon: Icons.search_rounded,
+              accent: KhejaColors.blue,
+              eyebrow: 'TENANT',
+              title: 'Find a Home',
+              subtitle: 'Search and discover houses',
+              points: const [
+                'Search by type, area, rent and availability',
+                'Save homes and get told when one frees up',
+                "Request a house and track the landlord's reply",
+              ],
+              onTap: () => _choose(context, 'seeker'),
+            ),
+            const SizedBox(height: 14),
+            _RoleCard(
+              icon: Icons.vpn_key_rounded,
+              accent: KhejaColors.emerald,
+              eyebrow: 'LANDLORD',
+              title: 'List Your Property',
+              subtitle: 'List and manage properties',
+              points: const [
+                'List houses with photos and video tours — free for now',
+                'Set availability and expected vacancy dates',
+                'Receive tenant requests and respond',
+              ],
+              onTap: () => _choose(context, 'landlord'),
+            ),
+            const SizedBox(height: 14),
+            _RoleCard(
+              icon: Icons.nightlight_round,
+              accent: KhejaColors.purple,
+              eyebrow: 'STAYS',
+              title: 'Stays',
+              subtitle: 'Short-term, Airbnb-style stays',
+              badge: 'COMING SOON',
+              points: const [
+                'Not open yet — join the list to hear first',
+              ],
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AirbnbSoonScreen(isRoot: false)),
               ),
-              const SizedBox(height: 16),
-              _RoleCard(
-                icon: Icons.vpn_key_rounded,
-                accent: KhejaColors.emerald,
-                title: "I'm a landlord",
-                subtitle: 'I have property to rent out',
-                points: const [
-                  'List houses with photos and video tours',
-                  'See who has booked, moved in and moved out',
-                  'Read inquiries and reply straight away',
-                ],
-                onTap: () => _choose(context, 'landlord'),
-              ),
+            ),
 
-              const Spacer(),
-              Center(
-                child: Text(
-                  'You can switch by signing out.',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: KhejaColors.zinc400,
-                  ),
+            const SizedBox(height: 26),
+            Center(
+              child: Text(
+                'You can switch later by signing out.',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: KhejaColors.zinc400,
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -101,14 +112,18 @@ class _RoleCard extends StatelessWidget {
   const _RoleCard({
     required this.icon,
     required this.accent,
+    required this.eyebrow,
     required this.title,
     required this.subtitle,
     required this.points,
     required this.onTap,
+    this.badge,
   });
 
   final IconData icon;
   final Color accent;
+  final String eyebrow;
+  final String? badge;
   final String title;
   final String subtitle;
   final List<String> points;
@@ -154,6 +169,24 @@ class _RoleCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        Row(
+                          children: [
+                            Text(eyebrow, style: kEyebrowStyle.copyWith(color: accent)),
+                            if (badge != null) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: KhejaColors.amber,
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(badge!,
+                                    style: kEyebrowStyle.copyWith(color: Colors.white, fontSize: 8)),
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 2),
                         Text(title, style: theme.textTheme.titleLarge),
                         Text(
                           subtitle,

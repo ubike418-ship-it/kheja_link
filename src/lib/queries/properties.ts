@@ -11,7 +11,7 @@ import type {
 // Explicit, because contact_phone, contact_whatsapp, latitude and longitude are
 // revoked from the API roles — they sit behind the KSh 150 unlock and come back
 // only through get_property_contact(). `select=*` would be denied outright.
-const PROPERTY_COLUMNS = "id, owner_id, title, slug, description, property_type_id, location_id, address_line, price_amount, price_currency, price_period, deposit_months, bedrooms, bathrooms, size_sqft, is_premium, is_furnished, status, available_from, view_count, published_at, created_at, updated_at, like_count, house_rules";
+const PROPERTY_COLUMNS = "id, owner_id, title, slug, description, property_type_id, location_id, address_line, price_amount, price_currency, price_period, deposit_months, bedrooms, bathrooms, size_sqft, is_premium, is_furnished, status, available_from, view_count, published_at, created_at, updated_at, like_count, house_rules, availability, notice_date";
 
 const LIST_SELECT = `
   ${PROPERTY_COLUMNS},

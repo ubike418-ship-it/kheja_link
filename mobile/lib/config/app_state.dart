@@ -15,10 +15,21 @@ class AppState extends ChangeNotifier {
   static const _kTheme = 'kheja.theme';
   static const _kOnboarded = 'kheja.permissions_asked';
   static const _kRole = 'kheja.chosen_role';
+  static String _kTutorial(String role) => 'kheja.onboarding_completed.$role';
 
   ThemeMode _themeMode = ThemeMode.light;
   bool _permissionsAsked = false;
   bool _loaded = false;
+
+  /// Roles whose first-run tutorial this device has finished or skipped:
+  /// 'tenant', 'landlord'. Stored per role, so switching to landlord later
+  /// still shows the landlord tour once.
+  final Set<String> _toured = {};
+
+  /// Bumped when someone asks to see the tutorial again from their account.
+  /// The home screens listen for it.
+  int _tutorialRequest = 0;
+  String? _tutorialRequestRole;
 
   /// Which door the person came in through: 'seeker' (tenant) or 'landlord'.
   /// Null until they choose. The database role on their account is still the
@@ -34,6 +45,26 @@ class AppState extends ChangeNotifier {
   bool get hasChosenRole => _chosenRole != null;
   bool get choseLandlord => _chosenRole == 'landlord';
 
+  bool hasToured(String role) => _toured.contains(role);
+  int get tutorialRequest => _tutorialRequest;
+  String? get tutorialRequestRole => _tutorialRequestRole;
+
+  /// Records that [role]'s tutorial is done on this device.
+  Future<void> markToured(String role) async {
+    if (_toured.add(role)) notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_kTutorial(role), true);
+    } catch (_) {}
+  }
+
+  /// "Show me around again", from the account screen.
+  void requestTutorial(String role) {
+    _tutorialRequestRole = role;
+    _tutorialRequest++;
+    notifyListeners();
+  }
+
   Future<void> load() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -41,6 +72,9 @@ class AppState extends ChangeNotifier {
           (prefs.getString(_kTheme) == 'dark') ? ThemeMode.dark : ThemeMode.light;
       _permissionsAsked = prefs.getBool(_kOnboarded) ?? false;
       _chosenRole = prefs.getString(_kRole);
+      for (final role in const ['tenant', 'landlord']) {
+        if (prefs.getBool(_kTutorial(role)) ?? false) _toured.add(role);
+      }
     } catch (_) {
       // First run on a device with no store yet — defaults are fine.
     }

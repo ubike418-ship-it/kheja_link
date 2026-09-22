@@ -7,7 +7,7 @@ import { NextResponse, type NextRequest } from "next/server";
  * Security — this only decides who gets to *see a page*.
  */
 
-const PROTECTED_PREFIXES = ["/dashboard", "/favorites", "/account"];
+const PROTECTED_PREFIXES = ["/dashboard", "/favorites", "/account", "/admin"];
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });

@@ -100,3 +100,71 @@ export function fieldErrorsOf(error: z.ZodError): Record<string, string[]> {
   }
   return out;
 }
+
+// -----------------------------------------------------------------------------
+// 0012: availability, service providers and business settings
+// -----------------------------------------------------------------------------
+
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a date");
+
+/** Mirrors properties_availability_ok and properties_notice_needs_date. */
+export const availabilitySchema = z
+  .object({
+    propertyId: z.string().uuid("Unknown property"),
+    availability: z.enum(["available", "occupied", "notice_given", "unavailable"]),
+    availableFrom: isoDate.optional().or(z.literal("")),
+    noticeDate: isoDate.optional().or(z.literal("")),
+  })
+  .refine((v) => v.availability !== "notice_given" || !!v.availableFrom, {
+    message: "Choose the date it becomes available",
+    path: ["availableFrom"],
+  })
+  .refine(
+    (v) =>
+      v.availability !== "notice_given" ||
+      !v.availableFrom ||
+      v.availableFrom > new Date().toISOString().slice(0, 10),
+    { message: "The available-from date must be in the future", path: ["availableFrom"] },
+  );
+
+const optionalText = (max: number) => z.string().trim().max(max).optional().or(z.literal(""));
+
+/** Mirrors the partners columns and partners_approval_ok. */
+export const providerSchema = z.object({
+  category: z.enum(["movers", "isp", "cleaning"]),
+  name: z.string().trim().min(2, "Enter the company name").max(120),
+  slug: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Lowercase letters, numbers and dashes only")
+    .max(80),
+  tagline: optionalText(120),
+  description: optionalText(1000),
+  phone: phone.optional().or(z.literal("")),
+  email: z.string().trim().toLowerCase().email("Enter a valid email address").optional().or(z.literal("")),
+  url: z.string().trim().url("Enter a full link, e.g. https://example.co.ke").optional().or(z.literal("")),
+  location: optionalText(120),
+  services: optionalText(600),
+  pricingInfo: optionalText(600),
+  brandColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Use a colour like #2563EB"),
+  logoUrl: z.string().trim().url().optional().or(z.literal("")),
+  approvalStatus: z.enum(["pending", "approved", "rejected"]),
+  isActive: z.boolean(),
+  isOurs: z.boolean(),
+  sortOrder: z.coerce.number().int().min(0).max(10000),
+  onboardingFee: z.coerce.number().min(0).max(10_000_000).optional(),
+  onboardingPaid: z.boolean(),
+});
+
+export const settingSchema = z.object({
+  key: z.string().regex(/^[a-z0-9_]{2,80}$/),
+  value: z.string().trim().max(500, "Keep values under 500 characters"),
+});
+
+export const feeAllocationSchema = z.object({
+  product: z.enum(["hunting_fee", "landlord_listing_fee", "provider_onboarding_fee"]),
+  party: z.string().trim().toLowerCase().regex(/^[a-z_]{2,40}$/, "Lowercase letters and underscores, e.g. partner"),
+  sharePercent: z.coerce.number().min(0).max(100),
+  isActive: z.boolean(),
+});

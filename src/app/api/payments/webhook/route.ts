@@ -7,7 +7,8 @@ import { createClient } from "@supabase/supabase-js";
  *
  * Paystack signs every event with HMAC-SHA512 over the raw body using the
  * secret key. We verify that before trusting anything: without it, anyone who
- * learned the URL could unlock every listing for free.
+ * learned the URL could unlock every listing, or activate the house hunting
+ * service, for free.
  *
  * Point Paystack at https://<your-domain>/api/payments/webhook
  */
@@ -57,14 +58,24 @@ export async function POST(request: Request) {
 
   const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
 
-  const { error } = await admin.rpc("confirm_contact_unlock", {
-    p_reference: reference,
-    p_provider: "paystack",
-  });
+  // kh_ is the house hunting fee, kl_ the per-listing contact unlock. The
+  // hunting fee is checked against what Paystack actually charged: the
+  // database refuses an underpayment, and a retried event is a no-op.
+  const { error } = reference.startsWith("kh_")
+    ? await admin.rpc("confirm_hunting_payment", {
+        p_reference: reference,
+        p_provider: "paystack",
+        p_amount_received:
+          typeof event.data?.amount === "number" ? event.data.amount / 100 : null,
+      })
+    : await admin.rpc("confirm_contact_unlock", {
+        p_reference: reference,
+        p_provider: "paystack",
+      });
 
   if (error) {
     // A non-2xx makes Paystack retry, which is what we want on a transient fault.
-    return NextResponse.json({ error: "Could not confirm the unlock." }, { status: 500 });
+    return NextResponse.json({ error: "Could not confirm the payment." }, { status: 500 });
   }
 
   return NextResponse.json({ received: true });

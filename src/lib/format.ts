@@ -77,3 +77,26 @@ export function whatsappLink(phone: string | null | undefined, message?: string)
   const query = message ? `?text=${encodeURIComponent(message)}` : "";
   return `https://wa.me/${digits}${query}`;
 }
+
+/**
+ * How a listing's availability reads to a tenant. Null when the home is simply
+ * free now, so cards stay clean. Mirrors Property.availabilityLabel in the app.
+ */
+export function availabilityLabel(
+  availability: string | null | undefined,
+  availableFrom: string | null | undefined,
+): { label: string; tone: "amber" | "purple" | "zinc" } | null {
+  const date = availableFrom
+    ? new Date(availableFrom).toLocaleDateString("en-KE", { day: "numeric", month: "short" })
+    : null;
+  switch (availability) {
+    case "notice_given":
+      return { label: date ? `Available from ${date}` : "Coming available", tone: "purple" };
+    case "occupied":
+      return { label: "Currently occupied", tone: "amber" };
+    case "unavailable":
+      return { label: "Temporarily unavailable", tone: "zinc" };
+    default:
+      return null;
+  }
+}

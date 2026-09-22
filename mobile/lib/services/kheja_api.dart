@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/models.dart';
@@ -19,7 +21,7 @@ class KhejaApi {
   /// are revoked from the API roles — they sit behind the KSh 150 unlock and
   /// come back only through get_property_contact(). '*' would be denied.
   static const _propertyColumns =
-      'id, owner_id, title, slug, description, property_type_id, location_id, address_line, price_amount, price_currency, price_period, deposit_months, bedrooms, bathrooms, size_sqft, is_premium, is_furnished, status, available_from, view_count, published_at, created_at, updated_at, like_count, house_rules, building_name, floor_number, service_charge, water_billing, water_notes, electricity_billing, parking_spaces, pets_allowed, min_lease_months, notice_months, nearby, security_details, internet_ready, is_gated, has_balcony';
+      'id, owner_id, title, slug, description, property_type_id, location_id, address_line, price_amount, price_currency, price_period, deposit_months, bedrooms, bathrooms, size_sqft, is_premium, is_furnished, status, available_from, view_count, published_at, created_at, updated_at, like_count, house_rules, building_name, floor_number, service_charge, water_billing, water_notes, electricity_billing, parking_spaces, pets_allowed, min_lease_months, notice_months, nearby, security_details, internet_ready, is_gated, has_balcony, availability, notice_date';
 
   static const _listSelect = '''
     $_propertyColumns,
@@ -122,7 +124,12 @@ class KhejaApi {
 
     if (filters.minPrice != null) query = query.gte('price_amount', filters.minPrice!);
     if (filters.maxPrice != null) query = query.lte('price_amount', filters.maxPrice!);
-    if (filters.bedrooms != null) query = query.gte('bedrooms', filters.bedrooms!);
+    if (filters.bedrooms != null) {
+      query = filters.exactBedrooms
+          ? query.eq('bedrooms', filters.bedrooms!)
+          : query.gte('bedrooms', filters.bedrooms!);
+    }
+    if (filters.availableNowOnly) query = query.eq('availability', 'available');
     if (filters.furnished) query = query.eq('is_furnished', true);
     if (filters.premium) query = query.eq('is_premium', true);
 
@@ -564,24 +571,39 @@ class KhejaApi {
         .select('*, property:properties ( id, title, slug )')
         .eq('property_id', propertyId)
         .eq('tenant_id', user.id)
-        .inFilter('status', ['booked', 'checked_in'])
+        .inFilter('status', ['booked', 'viewed', 'accepted', 'checked_in'])
         .maybeSingle();
     return row == null ? null : Tenancy.fromMap(row);
   }
 
-  Future<void> bookProperty(String propertyId, {String? note}) async {
+  /// Sends a house request. The database refuses a second open request for
+  /// the same home, and a request for a home that is not free right now.
+  Future<void> requestProperty(
+    String propertyId, {
+    String? note,
+    DateTime? preferredMoveIn,
+  }) async {
     final user = currentUser;
     if (user == null) throw const NotSignedInException();
-    await _client.from('tenancies').insert({
-      'property_id': propertyId,
-      'tenant_id': user.id,
-      'status': 'booked',
-      if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
-    });
+    await KhejaNetwork.run(() => _client.from('tenancies').insert({
+          'property_id': propertyId,
+          'tenant_id': user.id,
+          'status': 'booked',
+          if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+          if (preferredMoveIn != null)
+            'preferred_move_in': _day(preferredMoveIn),
+        }));
   }
 
-  Future<void> setTenancyStatus(String tenancyId, String status) async {
+  Future<void> setTenancyStatus(
+    String tenancyId,
+    String status, {
+    String? landlordResponse,
+  }) async {
     final patch = <String, dynamic>{'status': status};
+    if (landlordResponse != null && landlordResponse.trim().isNotEmpty) {
+      patch['landlord_response'] = landlordResponse.trim();
+    }
     if (status == 'checked_in') {
       patch['checked_in_at'] = DateTime.now().toUtc().toIso8601String();
     }
@@ -589,6 +611,303 @@ class KhejaApi {
       patch['moved_out_at'] = DateTime.now().toUtc().toIso8601String();
     }
     await _client.from('tenancies').update(patch).eq('id', tenancyId);
+  }
+
+  /// Every request across the signed-in landlord's homes, with the tenant's
+  /// name — and their number only once the landlord has accepted.
+  Future<List<OwnerRequest>> fetchRequestsForOwner() async {
+    if (!isSignedIn) return const [];
+    final rows = await KhejaNetwork.run(() => _client.rpc('get_requests_for_owner'));
+    return (rows as List)
+        .whereType<Map<String, dynamic>>()
+        .map(OwnerRequest.fromMap)
+        .toList();
+  }
+
+  static String _day(DateTime date) => date.toIso8601String().substring(0, 10);
+
+  // ---------------------------------------------------------------------------
+  // Business settings — prices and switches from app_settings
+  // ---------------------------------------------------------------------------
+
+  static const _settingsCacheKey = 'kheja.business_settings';
+
+  /// The last settings seen, so fees still read correctly with no data.
+  Future<BusinessSettings> cachedBusinessSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_settingsCacheKey);
+      if (raw == null) return const BusinessSettings();
+      return BusinessSettings.fromMap(Map<String, String>.from(jsonDecode(raw) as Map));
+    } catch (_) {
+      return const BusinessSettings();
+    }
+  }
+
+  /// Live settings, falling back to the cache and then to the defaults. Never
+  /// throws: a price label must always render.
+  Future<BusinessSettings> fetchBusinessSettings() async {
+    try {
+      final rows = await KhejaNetwork.run(
+        () => _client.from('app_settings').select('key, value'),
+        attempts: 2,
+      );
+      final settings = BusinessSettings.fromMap({
+        for (final r in rows) r['key'] as String: (r['value'] as String?) ?? '',
+      });
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_settingsCacheKey, jsonEncode(settings.toCache()));
+      } catch (_) {}
+      return settings;
+    } catch (_) {
+      return cachedBusinessSettings();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // House hunting — the tenant's KES 500 service
+  // ---------------------------------------------------------------------------
+
+  Future<HuntingService> fetchHuntingService() async {
+    final user = currentUser;
+    if (user == null) return HuntingService.none;
+    final row = await KhejaNetwork.run(() => _client
+        .from('hunting_services')
+        .select('status, activated_at, matched_property_id')
+        .eq('user_id', user.id)
+        .maybeSingle());
+    return row == null ? HuntingService.none : HuntingService.fromMap(row);
+  }
+
+  /// Opens (or resumes) a checkout. The database prices it from app_settings
+  /// and will not start one for a service that is already paid for — in which
+  /// case this returns null.
+  Future<({String reference, num amount, String currency})?> startHuntingPayment() async {
+    if (!isSignedIn) throw const NotSignedInException();
+    final rows = await KhejaNetwork.run(() => _client.rpc('start_hunting_payment'));
+    final row = (rows as List).whereType<Map<String, dynamic>>().firstOrNull;
+    final reference = row?['reference'] as String?;
+    if (row == null || reference == null) return null;
+    return (
+      reference: reference,
+      amount: (row['amount'] as num?) ?? 0,
+      currency: ((row['currency'] as String?) ?? 'KES').trim(),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Property interests — "notify me"
+  // ---------------------------------------------------------------------------
+
+  static const _interestSelect = 'id, property_id, property_type_id, location_id, '
+      'min_price, max_price, bedrooms, available_within_days, status, created_at, '
+      'last_notified_at, property:properties ( $_listSelect ), '
+      'property_type:property_types ( name ), location:locations ( name )';
+
+  Future<List<PropertyInterest>> fetchMyInterests() async {
+    final user = currentUser;
+    if (user == null) return const [];
+    final rows = await KhejaNetwork.run(() => _client
+        .from('property_interests')
+        .select(_interestSelect)
+        .eq('user_id', user.id)
+        .neq('status', 'cancelled')
+        .order('created_at', ascending: false));
+    return rows.map<PropertyInterest>((r) => PropertyInterest.fromMap(r)).toList();
+  }
+
+  /// The active "notify me" on this exact home, if there is one.
+  Future<PropertyInterest?> fetchInterestFor(String propertyId) async {
+    final user = currentUser;
+    if (user == null) return null;
+    try {
+      final row = await _client
+          .from('property_interests')
+          .select('id, property_id, status, created_at')
+          .eq('user_id', user.id)
+          .eq('property_id', propertyId)
+          .eq('status', 'active')
+          .maybeSingle();
+      return row == null ? null : PropertyInterest.fromMap(row);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// "Notify me when this home is available." Safe to call twice.
+  Future<void> watchProperty(String propertyId) async {
+    final user = currentUser;
+    if (user == null) throw const NotSignedInException();
+    if (await fetchInterestFor(propertyId) != null) return;
+    await KhejaNetwork.run(() => _client.from('property_interests').insert({
+          'user_id': user.id,
+          'property_id': propertyId,
+        }));
+  }
+
+  /// A standing search: "tell me about any home like this".
+  Future<void> createSearchAlert({
+    String? propertyTypeId,
+    String? locationId,
+    num? minPrice,
+    num? maxPrice,
+    int? bedrooms,
+    int? availableWithinDays,
+  }) async {
+    final user = currentUser;
+    if (user == null) throw const NotSignedInException();
+    await KhejaNetwork.run(() => _client.from('property_interests').insert({
+          'user_id': user.id,
+          'property_type_id': propertyTypeId,
+          'location_id': locationId,
+          'min_price': minPrice,
+          'max_price': maxPrice,
+          'bedrooms': bedrooms,
+          'available_within_days': availableWithinDays,
+        }));
+  }
+
+  Future<void> cancelInterest(String interestId) async {
+    await KhejaNetwork.run(() => _client
+        .from('property_interests')
+        .update({'status': 'cancelled'}).eq('id', interestId));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Landlord: availability, and who is waiting
+  // ---------------------------------------------------------------------------
+
+  /// available | occupied | notice_given (needs [availableFrom]) | unavailable.
+  /// Tenants waiting on the home are told by the database, not by the app.
+  Future<void> setPropertyAvailability(
+    String propertyId, {
+    required String availability,
+    DateTime? availableFrom,
+    DateTime? noticeDate,
+    bool republish = false,
+  }) async {
+    final user = currentUser;
+    if (user == null) throw const NotSignedInException();
+    final isNotice = availability == 'notice_given';
+    await KhejaNetwork.run(() => _client
+        .from('properties')
+        .update({
+          // A "rented" listing is hidden; setting its availability is the
+          // landlord asking for it to be seen again.
+          if (republish) 'status': 'published',
+          'availability': availability,
+          'available_from':
+              isNotice && availableFrom != null ? _day(availableFrom) : null,
+          'notice_date': isNotice && noticeDate != null ? _day(noticeDate) : null,
+        })
+        .eq('id', propertyId)
+        .eq('owner_id', user.id));
+  }
+
+  /// Property id → how many saved it and how many asked to be notified.
+  Future<Map<String, ({int saved, int waiting})>> fetchInterestCounts() async {
+    if (!isSignedIn) return const {};
+    try {
+      final rows = await _client.rpc('get_my_property_interest_counts');
+      return {
+        for (final r in (rows as List).whereType<Map<String, dynamic>>())
+          r['property_id'] as String: (
+            saved: (r['saved_count'] as num?)?.toInt() ?? 0,
+            waiting: (r['waiting_count'] as num?)?.toInt() ?? 0,
+          ),
+      };
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  Future<List<InterestedTenant>> fetchInterestedTenants(String propertyId) async {
+    final rows = await KhejaNetwork.run(() => _client
+        .rpc('get_interested_tenants', params: {'p_property_id': propertyId}));
+    return (rows as List)
+        .whereType<Map<String, dynamic>>()
+        .map(InterestedTenant.fromMap)
+        .toList();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Notification preferences
+  // ---------------------------------------------------------------------------
+
+  Future<NotificationPreferences> fetchNotificationPreferences() async {
+    final user = currentUser;
+    if (user == null) return const NotificationPreferences();
+    final row = await KhejaNetwork.run(() => _client
+        .from('notification_preferences')
+        .select()
+        .eq('user_id', user.id)
+        .maybeSingle());
+    return row == null
+        ? const NotificationPreferences()
+        : NotificationPreferences.fromMap(row);
+  }
+
+  Future<void> saveNotificationPreferences(NotificationPreferences prefs) async {
+    final user = currentUser;
+    if (user == null) throw const NotSignedInException();
+    await KhejaNetwork.run(() => _client
+        .from('notification_preferences')
+        .upsert({'user_id': user.id, ...prefs.toRow()}));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Onboarding — remembered on the account as well as on the device
+  // ---------------------------------------------------------------------------
+
+  /// Records that this account has been through [role]'s tutorial. Never
+  /// throws: the device flag already stops it repeating.
+  Future<void> markOnboarded(String role) async {
+    final user = currentUser;
+    if (user == null) return;
+    final column = switch (role) {
+      'landlord' => 'landlord_onboarded_at',
+      'stays' => 'stays_onboarded_at',
+      _ => 'tenant_onboarded_at',
+    };
+    try {
+      await _client
+          .from('profiles')
+          .update({column: DateTime.now().toUtc().toIso8601String()})
+          .eq('id', user.id)
+          .isFilter(column, null);
+    } catch (_) {}
+  }
+
+  // ---------------------------------------------------------------------------
+  // Stays — an interest list only; the feature itself is not live
+  // ---------------------------------------------------------------------------
+
+  Future<void> joinStaysWaitlist({
+    required String fullName,
+    String? phone,
+    String? email,
+    String? location,
+    int? propertyCount,
+    String? propertyType,
+    String? message,
+  }) async {
+    String? blank(String? v) => (v == null || v.trim().isEmpty) ? null : v.trim();
+    try {
+      await KhejaNetwork.run(() => _client.from('stays_waitlist').insert({
+            'user_id': currentUser?.id,
+            'full_name': fullName.trim(),
+            'phone': blank(phone),
+            'email': blank(email)?.toLowerCase(),
+            'location': blank(location),
+            'property_count': propertyCount,
+            'property_type': blank(propertyType),
+            'message': blank(message),
+          }));
+    } on PostgrestException catch (error) {
+      if (error.code == '23505') throw const AlreadyOnWaitlistException();
+      rethrow;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -904,6 +1223,9 @@ class NotSignedInException implements Exception {
 String describeError(Object error) {
   if (error is NotSignedInException) return 'Sign in to continue.';
   if (error is UploadTooLargeException) return error.message;
+  if (error is AlreadyOnWaitlistException) {
+    return 'You are already on the Stays list — we will be in touch.';
+  }
 
   if (error is AuthException) {
     final message = error.message.toLowerCase();
@@ -929,14 +1251,37 @@ String describeError(Object error) {
   }
 
   if (error is PostgrestException) {
+    final text = error.message.toLowerCase();
+    // Rules the database enforces, in words a person can act on.
+    if (error.code == '23505') {
+      if (text.contains('tenancies')) return 'You already have an open request for this home.';
+      if (text.contains('property_interests')) return 'You are already on the list for this home.';
+      return 'That has already been done.';
+    }
+    if (text.contains('not allowed') || text.contains('cannot be moved')) {
+      return 'That change is no longer possible. Pull down to refresh.';
+    }
+    if (text.contains('properties_notice_needs_date')) {
+      return 'Choose the date the home becomes available.';
+    }
+    if (text.contains('row-level') && text.contains('tenancies')) {
+      return 'This home cannot be requested right now — it may no longer be available.';
+    }
     // A row-level-security refusal is a permission problem, not a bug.
-    if (error.code == '42501' || error.message.toLowerCase().contains('row-level')) {
+    if (error.code == '42501' || text.contains('row-level')) {
       return 'You do not have permission to do that.';
     }
-    return error.message;
+    // Never show a raw database message.
+    return 'Something went wrong. Please try again.';
   }
 
   return 'Something went wrong. Please try again.';
+}
+
+class AlreadyOnWaitlistException implements Exception {
+  const AlreadyOnWaitlistException();
+  @override
+  String toString() => 'You are already on the Stays list.';
 }
 
 class UploadTooLargeException implements Exception {

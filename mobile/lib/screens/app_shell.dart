@@ -6,13 +6,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/app_state.dart';
 import '../main.dart';
 import '../models/models.dart';
-import 'airbnb_soon_screen.dart';
+import '../services/onboarding.dart';
 import 'favorites_screen.dart';
 import 'home_screen.dart';
 import 'landlord_home_screen.dart';
 import 'notifications_screen.dart';
 import 'profile_screen.dart';
 import 'search_screen.dart';
+import 'tenant_requests_screen.dart';
 
 /// The tab shell.
 ///
@@ -34,6 +35,7 @@ class _AppShellState extends State<AppShell> {
   StreamSubscription<AuthState>? _authSub;
 
   List<GlobalKey<NavigatorState>> _navigatorKeys = [];
+  int _seenTutorialRequest = AppState.instance.tutorialRequest;
 
   /// Signed in: the account's role decides. Signed out: the door they chose.
   bool get _isLandlord => khejaApi.isSignedIn
@@ -60,6 +62,19 @@ class _AppShellState extends State<AppShell> {
     // In-app notifications only, so a gentle poll is enough — there is no push
     // service to wake us.
     _pollTimer = Timer.periodic(const Duration(seconds: 45), (_) => _loadUnread());
+
+    AppState.instance.addListener(_onAppState);
+  }
+
+  /// "Show me around again": back to the first tab, where the tour runs.
+  void _onAppState() {
+    final request = AppState.instance.tutorialRequest;
+    if (request == _seenTutorialRequest || !mounted) return;
+    _seenTutorialRequest = request;
+    for (final key in _navigatorKeys) {
+      key.currentState?.popUntil((route) => route.isFirst);
+    }
+    setState(() => _index = 0);
   }
 
   void _rebuildKeys() {
@@ -67,8 +82,22 @@ class _AppShellState extends State<AppShell> {
   }
 
   Future<void> _loadProfile() async {
-    final profile = khejaApi.isSignedIn ? await khejaApi.fetchProfile() : null;
+    final profile = khejaApi.isSignedIn
+        ? await khejaApi.fetchProfile().catchError((_) => null)
+        : null;
     if (!mounted) return;
+
+    // A tour finished on this phone before signing in counts for the account.
+    if (profile != null) {
+      for (final (role, onAccount) in [
+        ('tenant', profile.tenantOnboardedAt),
+        ('landlord', profile.landlordOnboardedAt),
+      ]) {
+        if (onAccount == null && AppState.instance.hasToured(role)) {
+          Onboarding.complete(role);
+        }
+      }
+    }
     setState(() {
       _profile = profile;
       if (_index >= _tabs.length) _index = 0;
@@ -86,6 +115,7 @@ class _AppShellState extends State<AppShell> {
   void dispose() {
     _pollTimer?.cancel();
     _authSub?.cancel();
+    AppState.instance.removeListener(_onAppState);
     super.dispose();
   }
 
@@ -101,6 +131,12 @@ class _AppShellState extends State<AppShell> {
           label: 'Dashboard'
         ),
         (
+          screen: const TenantRequestsScreen(isRoot: true),
+          icon: Icons.inbox_outlined,
+          activeIcon: Icons.inbox_rounded,
+          label: 'Requests'
+        ),
+        (
           screen: const SearchScreen(),
           icon: Icons.search_outlined,
           activeIcon: Icons.search_rounded,
@@ -111,12 +147,6 @@ class _AppShellState extends State<AppShell> {
           icon: Icons.notifications_none_rounded,
           activeIcon: Icons.notifications_rounded,
           label: 'Alerts'
-        ),
-        (
-          screen: const AirbnbSoonScreen(),
-          icon: Icons.nightlight_outlined,
-          activeIcon: Icons.nightlight_round,
-          label: 'Stays'
         ),
         (
           screen: const ProfileScreen(),
