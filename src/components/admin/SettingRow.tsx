@@ -8,7 +8,6 @@ import { saveSettingAction } from "@/lib/actions/admin";
 import type { AppSettingRow } from "@/lib/supabase/database.types";
 
 const BOOLEAN = new Set([
-  "hunting_fee_unlocks_contacts",
   "stays_enabled",
   "service_provider_registration_enabled",
   "tenant_notifications_enabled",

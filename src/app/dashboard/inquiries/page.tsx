@@ -21,8 +21,8 @@ export default async function InquiriesPage() {
           Inquiries
         </h1>
         <p className="text-lg font-medium text-zinc-500 max-w-2xl">
-          People who have asked about your houses. Reply quickly — the first landlord to respond
-          usually gets the tenant.
+          Messages tenants sent about your houses before questions moved to the Kheja_Link team.
+          New questions now come to us, and tenants who unlock a listing call you directly.
         </p>
       </header>
 

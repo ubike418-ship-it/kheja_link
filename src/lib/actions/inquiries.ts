@@ -7,9 +7,11 @@ import type { InquiryStatus } from "@/lib/supabase/database.types";
 import type { ActionResult } from "@/lib/types";
 
 /**
- * Contacting a landlord. Guests may send an inquiry without an account — RLS
- * allows INSERT from anon but never SELECT, so nobody can read the resulting
- * personal data except the listing owner and the sender themselves.
+ * Messaging Kheja_Link about a listing. Free messages to landlords were
+ * removed (0015): the row is addressed to the admins, and RLS refuses any
+ * other recipient. Guests may still write without an account — RLS allows
+ * INSERT from anon but never SELECT, so only the admins and the sender can
+ * read it back.
  */
 export async function sendInquiryAction(
   _prev: ActionResult | null,
@@ -36,7 +38,7 @@ export async function sendInquiryAction(
   if (!email && !phone) {
     return {
       ok: false,
-      error: "Leave an email or a phone number so the landlord can reply.",
+      error: "Leave an email or a phone number so we can reply.",
       fieldErrors: { email: ["Add an email or a phone number"] },
     };
   }
@@ -51,6 +53,7 @@ export async function sendInquiryAction(
     email: email || null,
     phone: phone || null,
     message,
+    recipient: "admin",
   });
 
   if (error) {
@@ -62,11 +65,11 @@ export async function sendInquiryAction(
     };
   }
 
-  revalidatePath("/dashboard/inquiries");
+  revalidatePath("/admin/messages");
   return {
     ok: true,
     data: undefined,
-    message: "Message sent. The landlord will get back to you shortly.",
+    message: "Message sent. Kheja_Link will get back to you shortly.",
   };
 }
 

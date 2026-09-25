@@ -150,7 +150,8 @@ export default async function DashboardPage() {
               <div className="p-8 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl text-center space-y-2">
                 <MessageSquare className="w-8 h-8 text-zinc-300 mx-auto" />
                 <p className="text-sm font-bold text-zinc-400">
-                  No one has messaged you yet. Published listings collect inquiries here.
+                  No earlier inquiries. Tenants now reach you by unlocking a listing, or through the
+                  Kheja_Link team.
                 </p>
               </div>
             ) : (

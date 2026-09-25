@@ -16,6 +16,10 @@ export type PartnerCategory = "movers" | "isp" | "cleaning";
 export type ApprovalStatus = "pending" | "approved" | "rejected";
 export type WaitlistStatus = "new" | "contacted" | "onboarded" | "declined";
 export type FeeProduct = "hunting_fee" | "landlord_listing_fee" | "provider_onboarding_fee";
+export type InquiryRecipient = "landlord" | "admin";
+export type UnlockStatus = "pending" | "paid" | "failed" | "refunded";
+export type HouseSubmissionStatus = "pending" | "approved" | "rejected";
+export type RefundStatus = "pending" | "approved" | "paid" | "rejected";
 
 type Timestamps = {
   created_at: string;
@@ -133,6 +137,10 @@ export type InquiryRow = Timestamps & {
   phone: string | null;
   message: string;
   status: InquiryStatus;
+  /** Who the message is for. New messages always go to Kheja_Link (0015). */
+  recipient: InquiryRecipient;
+  admin_reply: string | null;
+  replied_at: string | null;
 };
 
 export type PartnerRow = {
@@ -190,6 +198,53 @@ export type FeeAllocationRow = Timestamps & {
   share_percent: number;
   is_active: boolean;
   notes: string | null;
+};
+
+export type ContactUnlockRow = {
+  id: string;
+  user_id: string;
+  property_id: string;
+  amount: number;
+  currency: string;
+  status: UnlockStatus;
+  provider: string;
+  provider_ref: string | null;
+  amount_received: number | null;
+  duplicate_payment: boolean;
+  created_at: string;
+  paid_at: string | null;
+};
+
+export type HouseSubmissionRow = Timestamps & {
+  id: string;
+  user_id: string;
+  location_id: string | null;
+  area: string | null;
+  property_type_id: string | null;
+  bedrooms: number | null;
+  rent_amount: number | null;
+  available_from: string | null;
+  landlord_name: string | null;
+  landlord_phone: string;
+  relationship: "moving_out" | "landlord_agrees";
+  notes: string | null;
+  status: HouseSubmissionStatus;
+  admin_note: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+};
+
+export type UnlockRefundRow = Timestamps & {
+  id: string;
+  user_id: string;
+  submission_id: string;
+  unlock_id: string | null;
+  amount: number;
+  currency: string;
+  status: RefundStatus;
+  payout_reference: string | null;
+  approved_at: string | null;
+  paid_at: string | null;
 };
 
 /**
@@ -282,6 +337,24 @@ export type Database = {
         Update: Partial<FeeAllocationRow>;
         Relationships: [];
       };
+      contact_unlocks: {
+        Row: ContactUnlockRow;
+        Insert: Insertable<ContactUnlockRow, "user_id" | "property_id">;
+        Update: Partial<ContactUnlockRow>;
+        Relationships: [];
+      };
+      house_submissions: {
+        Row: HouseSubmissionRow;
+        Insert: Insertable<HouseSubmissionRow, "user_id" | "landlord_phone">;
+        Update: Partial<HouseSubmissionRow>;
+        Relationships: [];
+      };
+      unlock_refunds: {
+        Row: UnlockRefundRow;
+        Insert: Insertable<UnlockRefundRow, "user_id" | "submission_id" | "amount">;
+        Update: Partial<UnlockRefundRow>;
+        Relationships: [];
+      };
     };
     Views: {
       public_profiles: {
@@ -313,6 +386,27 @@ export type Database = {
       hunting_checkout_details: {
         Args: { p_reference: string };
         Returns: { amount: number; currency: string; status: string }[];
+      };
+      unlock_checkout_details: {
+        Args: { p_reference: string };
+        Returns: { amount: number; currency: string; status: string; property_id: string }[];
+      };
+      start_contact_unlock: {
+        Args: { p_property_id: string };
+        Returns: {
+          reference: string | null;
+          amount: number;
+          currency: string;
+          already_unlocked: boolean;
+        }[];
+      };
+      admin_review_house_submission: {
+        Args: { p_submission_id: string; p_approve: boolean; p_note?: string | null };
+        Returns: string;
+      };
+      admin_mark_refund_paid: {
+        Args: { p_refund_id: string; p_reference?: string | null };
+        Returns: boolean;
       };
     };
     Enums: {

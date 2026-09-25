@@ -10,7 +10,13 @@ import '../services/payments.dart';
 import 'kheja_sheet.dart';
 import 'states.dart';
 
-/// The KSh 150 contact unlock.
+/// The contact unlock: one price for every listing (contact_unlock_fee, KSh
+/// 500 by default), charged once per listing when the tenant taps "Unlock
+/// contact".
+///
+/// The card deliberately shows no price. It first appears on the payment
+/// screen after the tap, read from the checkout the database created, so the
+/// tenant sees exactly what M-Pesa will charge before approving it.
 ///
 /// While locked, the phone number, WhatsApp and exact map position genuinely
 /// do not exist on the client — the database refuses to send them. This widget
@@ -25,17 +31,12 @@ class UnlockCard extends StatefulWidget {
     required this.contact,
     required this.onUnlocked,
     required this.onRequireSignIn,
-    this.onHuntingFee,
   });
 
   final Property property;
   final PropertyContact contact;
   final Future<void> Function() onUnlocked;
   final Future<bool> Function() onRequireSignIn;
-
-  /// Opens the house hunting fee, which (when configured) unlocks every
-  /// listing at once. Null hides the option.
-  final Future<void> Function()? onHuntingFee;
 
   @override
   State<UnlockCard> createState() => _UnlockCardState();
@@ -58,17 +59,11 @@ class _UnlockCardState extends State<UnlockCard> {
 
     setState(() => _busy = true);
 
-    // Already paid for (perhaps on another device)? Nothing to buy.
-    if (await khejaApi.hasUnlocked(widget.property.id)) {
-      if (!mounted) return;
-      setState(() => _busy = false);
-      await widget.onUnlocked();
-      return;
-    }
-
-    final String reference;
+    // The database prices the checkout and resumes one already open, so a
+    // second tap never opens a second charge.
+    final UnlockCheckout checkout;
     try {
-      reference = await khejaApi.startContactUnlock(widget.property.id);
+      checkout = await khejaApi.startContactUnlock(widget.property.id);
     } catch (error) {
       if (!mounted) return;
       setState(() => _busy = false);
@@ -79,21 +74,28 @@ class _UnlockCardState extends State<UnlockCard> {
     if (!mounted) return;
     setState(() => _busy = false);
 
+    // Already paid for (perhaps on another device)? Nothing to buy.
+    final reference = checkout.reference;
+    if (checkout.alreadyUnlocked || reference == null) {
+      await widget.onUnlocked();
+      return;
+    }
+
     final paid = await showKhejaSheet<bool>(
       context,
       PaymentSheet(
         reference: reference,
-        amountLabel: formatPrice(kUnlockAmount),
-        title: 'Unlock contact details',
-        what: 'The landlord, caretaker and exact location for '
-            '"${widget.property.title}".',
+        amountLabel: checkout.amountLabel,
+        title: 'Unlock contact',
+        what: 'Landlord and caretaker numbers and the exact location for '
+            '"${widget.property.title}". One-off — never charged again for this home.',
         cardCheckoutUrl: () => KhejaCheckout.cardCheckoutUrl(reference),
       ),
     );
 
     if (!mounted) return;
     if (paid == true) {
-      showKhejaSnack(context, 'Unlocked. The details are below.');
+      showKhejaSnack(context, 'Unlocked. The details are below and stay yours.');
     } else {
       setState(() => _awaitingReturn = true);
     }
@@ -315,45 +317,6 @@ class _UnlockCardState extends State<UnlockCard> {
           // The blurred teaser, so it is obvious what is behind the wall.
           const _BlurredNumber(),
           const SizedBox(height: 18),
-
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                formatPrice(kUnlockAmount),
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  color: KhejaColors.blue,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: KhejaColors.amber,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text('OFFER',
-                      style: kEyebrowStyle.copyWith(color: Colors.white, fontSize: 9)),
-                ),
-              ),
-              const Spacer(),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text(
-                  'One-off',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    color: KhejaColors.zinc500,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
@@ -368,7 +331,7 @@ class _UnlockCardState extends State<UnlockCard> {
                   : const Icon(Icons.lock_open_rounded, size: 20),
               label: Text(_busy
                   ? 'Starting…'
-                  : 'Unlock for ${formatPrice(kUnlockAmount)}'),
+                  : 'Unlock contact'),
             ),
           ),
 
@@ -384,21 +347,10 @@ class _UnlockCardState extends State<UnlockCard> {
             ),
           ],
 
-          if (widget.onHuntingFee != null) ...[
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              child: TextButton.icon(
-                onPressed: _busy ? null : widget.onHuntingFee,
-                icon: const Icon(Icons.travel_explore_rounded, size: 18),
-                label: const Text('Or use the House Hunting service — unlocks every home'),
-              ),
-            ),
-          ],
           const SizedBox(height: 12),
           Text(
-            'Pays for itself once: unlock this home and the details stay yours. '
-            'You can still send a free message without unlocking.',
+            'Unlock once and the details stay yours — you never pay again for this home. '
+            'Not part of your rent or deposit.',
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w500,

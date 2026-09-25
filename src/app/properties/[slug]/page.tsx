@@ -14,6 +14,7 @@ import {
   Wallet,
   ArrowLeft,
   Sparkles,
+  Lock,
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -331,6 +332,30 @@ export default async function PropertyDetailPage({ params }: { params: Params })
                   )}
                 </div>
               </div>
+
+              {!isOwner && (
+                <div className="p-8 bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-[2.5rem] space-y-5">
+                  <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-blue-100">
+                    <Lock className="w-4 h-4" />
+                    Unlock contact
+                  </div>
+                  {/* No price here on purpose: the amount first appears on the payment
+                      screen in the app, after the tenant taps "Unlock contact". */}
+                  <p className="text-2xl font-black tracking-tighter">
+                    Get the landlord&apos;s and caretaker&apos;s numbers and the exact location.
+                  </p>
+                  <p className="text-sm font-medium text-blue-50 leading-relaxed">
+                    Tap &ldquo;Unlock contact&rdquo; on this home in the Kheja_Link app. Unlock once
+                    and the details stay yours.
+                  </p>
+                  <Link
+                    href="/#get-the-app"
+                    className="w-full h-14 bg-white text-blue-700 rounded-2xl font-black flex items-center justify-center gap-2 hover:scale-[1.02] transition-transform"
+                  >
+                    Unlock in the app
+                  </Link>
+                </div>
+              )}
 
               <InquiryForm
                 propertyId={property.id}

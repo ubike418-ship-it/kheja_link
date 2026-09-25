@@ -17,7 +17,7 @@ const APK_URL =
 const FEATURES = [
   "Search every home, filter by area, rent and amenities",
   "Save homes — and get told the moment one frees up",
-  "Message landlords without leaving the app",
+  "Unlock a landlord's contact by M-Pesa, right in the app",
 ];
 
 export default async function AppDownloadQR() {
@@ -30,7 +30,7 @@ export default async function AppDownloadQR() {
   });
 
   return (
-    <section className="px-6 pt-20">
+    <section id="get-the-app" className="px-6 pt-20 scroll-mt-32">
       <div className="max-w-7xl mx-auto">
         <div className="relative rounded-[4rem] overflow-hidden bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-10 md:p-16">
           <div className="absolute inset-0 opacity-60 bg-[radial-gradient(circle_at_top_left,_var(--tw-gradient-stops))] from-blue-500/10 via-transparent to-transparent" />

@@ -23,7 +23,7 @@ import 'property_detail_screen.dart';
 import 'search_screen.dart';
 
 /// The tenant's home: the three ways into Kheja_Link, the category rail
-/// carried over from the web's circular menu, the house hunting service, and
+/// carried over from the web's circular menu, and
 /// the newest listings. The first time a tenant opens it, a short guided tour
 /// runs over these same widgets.
 class HomeScreen extends StatefulWidget {
@@ -70,12 +70,16 @@ class _HomeScreenState extends State<HomeScreen> {
   BusinessSettings _settings = const BusinessSettings();
   HuntingService _hunting = HuntingService.none;
 
+  /// The unlock price is never shown up front — only on the payment screen
+  /// when a tenant taps "Unlock contact". Money talk on the home screen (the
+  /// refund offer) is for people who have already paid for an unlock.
+  bool _hasPaidUnlock = false;
+
   // What the guided tour points at.
   final _categoryKey = GlobalKey();
   final _searchKey = GlobalKey();
   final _listKey = GlobalKey();
   final _firstCardKey = GlobalKey();
-  final _huntingKey = GlobalKey();
 
   bool _touring = false;
   int _seenTutorialRequest = AppState.instance.tutorialRequest;
@@ -114,11 +118,13 @@ class _HomeScreenState extends State<HomeScreen> {
     final results = await Future.wait<Object>([
       khejaApi.fetchBusinessSettings(),
       khejaApi.fetchHuntingService().catchError((_) => HuntingService.none),
+      khejaApi.fetchUnlockedPropertyIds(),
     ]);
     if (!mounted) return;
     setState(() {
       _settings = results[0] as BusinessSettings;
       _hunting = results[1] as HuntingService;
+      _hasPaidUnlock = (results[2] as Set<String>).isNotEmpty;
     });
   }
 
@@ -184,25 +190,13 @@ class _HomeScreenState extends State<HomeScreen> {
               'amenities and availability. Tap the heart to save it — if it is occupied, '
               'ask to be notified when it frees up.',
         ),
-        CoachStep(
-          target: _huntingKey,
-          icon: Icons.payments_rounded,
-          title: 'Payments',
-          body: 'Payments to Kheja_Link — like the ${_settings.huntingFeeLabel} house hunting '
-              'fee — are made here, on Paystack\'s secure checkout. Rent and deposit are '
-              'paid to the landlord, not through this fee.',
-        ),
       ],
     );
 
     await Onboarding.complete('tenant');
     _touring = false;
-    if (!mounted) return;
-    // The last word: what the house hunting fee is.
-    await Navigator.of(context, rootNavigator: true).push(
-      MaterialPageRoute(builder: (_) => const HuntingScreen(isOnboarding: true)),
-    );
-    if (mounted) _loadHunting();
+    // No pricing at the end of the tour: the unlock price is shown only when a
+    // tenant taps "Unlock contact" on a home they want.
   }
 
   List<Property> _visible(List<Property> all) {
@@ -328,15 +322,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
                 child: Column(
                   children: [
-                    KeyedSubtree(
-                      key: _huntingKey,
-                      child: _HuntingCard(
+                    if (_hunting.isActive || (_hasPaidUnlock && _settings.refundsEnabled)) ...[
+                      _HuntingCard(
                         settings: _settings,
                         service: _hunting,
                         onTap: () => _push(const HuntingScreen()),
                       ),
-                    ),
-                    const SizedBox(height: 12),
+                      const SizedBox(height: 12),
+                    ],
                     _QuickActions(
                       onRequests: () => _push(const MyRequestsScreen()),
                       onAlert: _newAlert,
@@ -528,7 +521,9 @@ class _PathCard extends StatelessWidget {
   }
 }
 
-/// The house hunting service at a glance: price when unpaid, status once paid.
+/// Shown only to tenants who have already paid for an unlock: the refund for
+/// giving us a house — or, for someone holding a House Hunting pass bought
+/// before it was retired, that every listing is already unlocked.
 class _HuntingCard extends StatelessWidget {
   const _HuntingCard({required this.settings, required this.service, required this.onTap});
 
@@ -576,16 +571,14 @@ class _HuntingCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'HOUSE HUNTING',
+                      'UNLOCKS & REFUNDS',
                       style: kEyebrowStyle.copyWith(color: Colors.white.withValues(alpha: 0.8)),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       active
-                          ? 'Your service is active'
-                          : service.isPending
-                              ? 'Payment pending — tap to check'
-                              : '${settings.huntingFeeLabel} house hunting fee',
+                          ? 'Your House Hunting pass is active'
+                          : 'Give us a house, get ${settings.refundLabel} back',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 16,
@@ -593,7 +586,9 @@ class _HuntingCard extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      active ? 'We are helping you find a home.' : 'Separate from rent · paid once',
+                      active
+                          ? 'Every listing is unlocked for you.'
+                          : 'Know a vacant house? Tell us and we refund part of your unlock.',
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.85),
                         fontSize: 12,

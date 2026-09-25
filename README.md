@@ -139,8 +139,9 @@ Level Security enabled, so a forged request cannot read or write what it should 
 - Only `published` listings are publicly readable; a landlord additionally sees their own drafts.
 - A landlord can only insert, update or delete rows where `owner_id = auth.uid()`.
 - Favourites are readable and writable only by the user they belong to.
-- Inquiries can be **inserted** by anyone (guests can contact a landlord) but **read** only by
-  the listing's owner and the original sender.
+- Inquiries can be **inserted** by anyone (guests included), but since 0015 only addressed to
+  Kheja_Link (`recipient = 'admin'`). They are **read** only by the admins and the original
+  sender; landlords keep read access to the inquiries sent to them before 0015.
 - Phone numbers and email addresses are never publicly selectable from `profiles`; public
   listing pages read the restricted `public_profiles` view instead.
 - Storage objects can only be written into a folder named after the uploader's own user id.
@@ -150,7 +151,7 @@ Level Security enabled, so a forged request cannot read or write what it should 
 ## House hunting, availability, requests and alerts (0012)
 
 [`supabase/migrations/0012_hunting_availability_requests.sql`](supabase/migrations/0012_hunting_availability_requests.sql)
-adds the KES 500 house hunting fee, property availability and vacancy dates, "notify me"
+adds the house hunting pass (retired in 0015), property availability and vacancy dates, "notify me"
 subscriptions, house requests, notification preferences, the Stays waitlist, manual approval
 for service providers, and (with `0014_payment_charges.sql`) in-app M-Pesa payments. **All notifications are in-app** (the Inbox tab); Kheja_Link
 sends no email or SMS — see `0013_in_app_notifications_only.sql`.
@@ -160,10 +161,34 @@ sends no email or SMS — see `0013_in_app_notifications_only.sql`.
 > migration into the Supabase SQL Editor (or re-run `setup.sql`, which includes it), then deploy.
 
 **Business rules live in the database**, in `app_settings` — edit them at `/admin/settings`
-rather than in code: `hunting_fee` (500), `landlord_listing_fee` (0), the free-listing offer
-label and optional end date, `stays_enabled` (false), `service_provider_registration_enabled`
-(false) and more. How each hunting fee is split is in `fee_allocations` (100% platform until
-agreed otherwise); every confirmed payment records the split in force at the time.
+rather than in code: `contact_unlock_fee` (500), `house_refund_amount` (200),
+`landlord_listing_fee` (0), the free-listing offer label and optional end date, `stays_enabled`
+(false), `service_provider_registration_enabled` (false) and more. How each hunting fee is split
+is in `fee_allocations` (100% platform until agreed otherwise); every confirmed payment records
+the split in force at the time.
+
+## Pricing: one unlock price, refunds for houses (0015)
+
+[`supabase/migrations/0015_uniform_unlock_refunds.sql`](supabase/migrations/0015_uniform_unlock_refunds.sql):
+
+- **Unlocking a listing costs `contact_unlock_fee` (KES 500)** — the same for every tenant and
+  every listing — and gives the landlord's and caretaker's numbers and the exact location. It
+  is charged once per listing, when the tenant taps **Unlock contact**. The old KES 150 price is
+  gone.
+- **The database sets the price.** A trigger prices every `contact_unlocks` row from
+  `app_settings`, whatever an app sends; `start_contact_unlock()` resumes an open checkout
+  rather than opening a second; `confirm_contact_unlock()` refuses an underpayment and never
+  records a second paid unlock for the same listing (a stray second payment is flagged
+  `duplicate_payment` and the admins are told, for a manual refund).
+- **Give us a house, get `house_refund_amount` (KES 200) back.** A tenant who paid for an unlock
+  submits a vacant house in the app (`house_submissions`). An admin approves it at
+  `/admin/refunds`, which approves the refund (`unlock_refunds`: pending → approved → paid);
+  the admin sends the money by M-Pesa and marks it paid. One refund per paid unlock. Each step
+  is an in-app notification.
+- **No free messages to landlords.** New inquiries go to the admins (`/admin/messages`), who
+  reply in-app; the reply lands in the sender's Inbox.
+- **Existing access is kept**: unlocks paid at KES 150 and House Hunting passes bought before
+  0015 keep working. The pass itself is no longer sold.
 
 ### Payments
 
@@ -225,7 +250,7 @@ its free-tier policy.
 | Variable | What it is |
 | --- | --- |
 | `CRON_SECRET` | Optional. Protects `/api/cron/daily`, the keep-alive job |
-| `PAYMENTS_DEMO_MODE` | `true` only for testing the hunting fee without Paystack. Never in production |
+| `PAYMENTS_DEMO_MODE` | `true` only for testing payments without Paystack — unlocks are then granted without charging. Never in production |
 
 ---
 

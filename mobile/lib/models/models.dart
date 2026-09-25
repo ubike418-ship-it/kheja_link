@@ -697,7 +697,8 @@ class KhejaNotification {
       );
 }
 
-/// The landlord's contact details, once the KSh 150 unlock has been paid.
+/// The landlord's contact details, once the listing's contact unlock has been
+/// paid (or a House Hunting pass bought before 0015 covers it).
 /// Everything is null while [unlocked] is false — the database does not send
 /// the values at all, rather than the app hiding them.
 class PropertyContact {
@@ -904,10 +905,6 @@ class OwnerRequest {
         respondedAt: _date(map['responded_at']),
       );
 }
-
-/// What the KSh 150 unlock costs, in one place.
-const kUnlockAmount = 150;
-const kUnlockCurrency = 'KES';
 
 /// What a search suggestion points at.
 enum SuggestionKind { location, type, property }
@@ -1161,21 +1158,26 @@ class ListingDraft {
 /// The business rules both apps read from app_settings, so a price or a
 /// feature flag changes without a new build. The defaults match the migration
 /// and are what the app shows before the first load, or with no data.
+///
+/// The prices here are for display. What M-Pesa actually charges is set by the
+/// database from the same rows when the tenant taps "Unlock contact".
 class BusinessSettings {
   const BusinessSettings({
-    this.huntingFee = 500,
-    this.huntingFeeCurrency = 'KES',
-    this.huntingUnlocksContacts = true,
-    this.contactUnlockFee = kUnlockAmount,
+    this.contactUnlockFee = 500,
+    this.contactUnlockCurrency = 'KES',
+    this.houseRefundAmount = 200,
     this.landlordListingFee = 0,
     this.listingOfferLabel = 'Free Property Listing — Limited-Time Offer',
     this.listingOfferEndsOn,
   });
 
-  final num huntingFee;
-  final String huntingFeeCurrency;
-  final bool huntingUnlocksContacts;
+  /// One price to unlock any listing, charged once per listing.
   final num contactUnlockFee;
+  final String contactUnlockCurrency;
+
+  /// Refunded to a tenant who paid for an unlock and then gives us a house.
+  final num houseRefundAmount;
+
   final num landlordListingFee;
   final String listingOfferLabel;
 
@@ -1183,13 +1185,14 @@ class BusinessSettings {
   final DateTime? listingOfferEndsOn;
 
   bool get listingIsFree => landlordListingFee <= 0;
-  String get huntingFeeLabel => formatPrice(huntingFee, huntingFeeCurrency);
+  bool get refundsEnabled => houseRefundAmount > 0 && houseRefundAmount < contactUnlockFee;
+  String get unlockFeeLabel => formatPrice(contactUnlockFee, contactUnlockCurrency);
+  String get refundLabel => formatPrice(houseRefundAmount, contactUnlockCurrency);
 
   Map<String, String> toCache() => {
-        'hunting_fee': '$huntingFee',
-        'hunting_fee_currency': huntingFeeCurrency,
-        'hunting_fee_unlocks_contacts': '$huntingUnlocksContacts',
         'contact_unlock_fee': '$contactUnlockFee',
+        'contact_unlock_currency': contactUnlockCurrency,
+        'house_refund_amount': '$houseRefundAmount',
         'landlord_listing_fee': '$landlordListingFee',
         'landlord_listing_fee_offer_label': listingOfferLabel,
         'landlord_listing_fee_offer_ends_on':
@@ -1203,18 +1206,11 @@ class BusinessSettings {
       return (v == null || v.isEmpty) ? null : v;
     }
 
-    bool b(String k, bool fallback) {
-      final v = t(k)?.toLowerCase();
-      if (v == null) return fallback;
-      return const {'true', '1', 'yes', 'on'}.contains(v);
-    }
-
     const d = BusinessSettings();
     return BusinessSettings(
-      huntingFee: n('hunting_fee') ?? d.huntingFee,
-      huntingFeeCurrency: t('hunting_fee_currency') ?? d.huntingFeeCurrency,
-      huntingUnlocksContacts: b('hunting_fee_unlocks_contacts', d.huntingUnlocksContacts),
       contactUnlockFee: n('contact_unlock_fee') ?? d.contactUnlockFee,
+      contactUnlockCurrency: t('contact_unlock_currency') ?? d.contactUnlockCurrency,
+      houseRefundAmount: n('house_refund_amount') ?? d.houseRefundAmount,
       landlordListingFee: n('landlord_listing_fee') ?? d.landlordListingFee,
       listingOfferLabel: t('landlord_listing_fee_offer_label') ?? d.listingOfferLabel,
       listingOfferEndsOn: DateTime.tryParse(t('landlord_listing_fee_offer_ends_on') ?? ''),
@@ -1222,7 +1218,8 @@ class BusinessSettings {
   }
 }
 
-/// The tenant's house hunting service:
+/// The House Hunting pass: no longer sold (0015), but a pass bought before
+/// then keeps every listing unlocked while it is active.
 /// unpaid → payment_pending → service_active → matched → completed.
 class HuntingService {
   const HuntingService({this.status = 'unpaid', this.activatedAt, this.matchedPropertyId});
@@ -1249,6 +1246,133 @@ class HuntingService {
         status: (map['status'] as String?) ?? 'unpaid',
         activatedAt: _date(map['activated_at']),
         matchedPropertyId: map['matched_property_id'] as String?,
+      );
+}
+
+/// What start_contact_unlock() hands back: the checkout to pay, or nothing to
+/// buy because the listing is already unlocked.
+class UnlockCheckout {
+  const UnlockCheckout({
+    required this.reference,
+    required this.amount,
+    required this.currency,
+    required this.alreadyUnlocked,
+  });
+
+  final String? reference;
+  final num amount;
+  final String currency;
+  final bool alreadyUnlocked;
+
+  String get amountLabel => formatPrice(amount, currency);
+
+  factory UnlockCheckout.fromMap(Map<String, dynamic> map) => UnlockCheckout(
+        reference: map['reference'] as String?,
+        amount: (map['amount'] as num?) ?? 0,
+        currency: ((map['currency'] as String?) ?? 'KES').trim(),
+        alreadyUnlocked: map['already_unlocked'] == true,
+      );
+}
+
+/// A house a tenant gave us, with the refund it earned, if any.
+class HouseSubmission {
+  const HouseSubmission({
+    required this.id,
+    required this.status,
+    required this.createdAt,
+    this.area,
+    this.locationName,
+    this.propertyTypeName,
+    this.bedrooms,
+    this.adminNote,
+    this.refund,
+  });
+
+  final String id;
+
+  /// pending, approved or rejected.
+  final String status;
+  final DateTime createdAt;
+  final String? area;
+  final String? locationName;
+  final String? propertyTypeName;
+  final int? bedrooms;
+  final String? adminNote;
+  final UnlockRefund? refund;
+
+  String get title {
+    final kind = [
+      if (bedrooms != null) '$bedrooms-bedroom',
+      propertyTypeName ?? 'House',
+    ].join(' ');
+    final where = [
+      if (area != null && area!.trim().isNotEmpty) area!.trim(),
+      if (locationName != null) locationName!,
+    ].join(', ');
+    return where.isEmpty ? kind : '$kind in $where';
+  }
+
+  String get statusLabel => switch (status) {
+        'approved' => 'House approved',
+        'rejected' => 'House not approved',
+        _ => 'House under review',
+      };
+
+  factory HouseSubmission.fromMap(Map<String, dynamic> map) {
+    final rawRefund = map['refund'];
+    final refundMap = rawRefund is List
+        ? (rawRefund.isEmpty ? null : rawRefund.first)
+        : rawRefund;
+    return HouseSubmission(
+      id: map['id'] as String,
+      status: (map['status'] as String?) ?? 'pending',
+      createdAt: _date(map['created_at']) ?? DateTime.now(),
+      area: map['area'] as String?,
+      locationName: (map['location'] as Map?)?['name'] as String?,
+      propertyTypeName: (map['property_type'] as Map?)?['name'] as String?,
+      bedrooms: (map['bedrooms'] as num?)?.toInt(),
+      adminNote: map['admin_note'] as String?,
+      refund: refundMap is Map
+          ? UnlockRefund.fromMap(Map<String, dynamic>.from(refundMap))
+          : null,
+    );
+  }
+}
+
+/// pending (house under review) → approved (money owed) → paid; or rejected.
+class UnlockRefund {
+  const UnlockRefund({
+    required this.id,
+    required this.amount,
+    required this.currency,
+    required this.status,
+    this.payoutReference,
+    this.paidAt,
+  });
+
+  final String id;
+  final num amount;
+  final String currency;
+  final String status;
+  final String? payoutReference;
+  final DateTime? paidAt;
+
+  String get amountLabel => formatPrice(amount, currency);
+
+  String get statusLabel => switch (status) {
+        'approved' => 'Refund approved — on its way',
+        'paid' => 'Refund paid',
+        'rejected' => 'No refund',
+        _ => 'Refund pending',
+      };
+
+  factory UnlockRefund.fromMap(Map<String, dynamic> map) => UnlockRefund(
+        id: map['id'] as String,
+        amount: (map['amount'] as num?) ?? 0,
+        currency: ((map['currency'] as String?) ?? 'KES').trim(),
+        status: (map['status'] as String?) ?? 'pending',
+        payoutReference: map['payout_reference'] as String?,
+        paidAt: _date(map['paid_at']),
       );
 }
 

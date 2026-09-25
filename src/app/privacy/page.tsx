@@ -16,7 +16,8 @@ const sections: LegalSection[] = [
     bullets: [
       "Account details: your name, email address and, if you give it, your phone number.",
       "Listing details: everything you type into a listing, including photographs you upload.",
-      "Inquiries: the name, contact details and message you send to a landlord.",
+      "Messages: the name, contact details and message you send to the Kheja_Link team about a listing, and our reply.",
+      "Payments and refunds: which listings you unlocked, what you paid, and any house you give us for a refund. M-Pesa payments are processed by Paystack; we never see your M-Pesa PIN.",
       "Saved homes: the listings you add to your shortlist, which only you can see.",
       "Basic usage data: a per-listing view count. We do not run third-party advertising or analytics trackers.",
     ],
@@ -24,7 +25,7 @@ const sections: LegalSection[] = [
   {
     heading: "Why we hold it",
     paragraphs: [
-      "To run your account, show your listings to house hunters, pass your inquiry to the right landlord, and keep the platform free of fraud.",
+      "To run your account, show your listings to house hunters, answer your messages, unlock the listings you pay for, process refunds, and keep the platform free of fraud.",
       "We do not sell your data, and we do not share it with advertisers.",
     ],
   },
@@ -36,7 +37,7 @@ const sections: LegalSection[] = [
     bullets: [
       "Published listings, their photographs, and the landlord's display name are public.",
       "Your email address is never shown publicly. A phone number is only visible if you deliberately add it to a listing as a contact number.",
-      "An inquiry can only be read by the landlord who owns that listing and by you, the sender.",
+      "A message you send about a listing can only be read by the Kheja_Link team and by you, the sender. Messages sent to landlords before this change stay readable by that landlord.",
       "Your saved homes are private to you. Nobody else can query them, including other landlords.",
     ],
   },

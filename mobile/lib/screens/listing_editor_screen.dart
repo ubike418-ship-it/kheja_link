@@ -651,8 +651,8 @@ class _ListingEditorScreenState extends State<ListingEditorScreen> {
             _Section(
               icon: Icons.contact_phone_rounded,
               title: 'Contact details',
-              subtitle: 'Hidden from tenants until they pay the KSh 150 unlock, '
-                  'which filters out time-wasters.',
+              subtitle: 'Hidden from tenants until they pay Kheja_Link to unlock '
+                  'this listing, which filters out time-wasters.',
               child: Column(
                 children: [
                   _text(

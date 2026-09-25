@@ -58,13 +58,14 @@ ke.co.khejalink://login-callback
 | --- | --- |
 | **Home** | Hero, category rail (the mobile form of the web circular menu), and the newest listings. Pull to refresh. |
 | **Search** | Full-text search plus filters — house type, area, bedrooms, max rent, amenities, furnished, premium — and sorting. Infinite scroll. |
-| **Property** | Photo gallery, key facts, description, amenities, location with a Maps hand-off, the landlord card, and call / WhatsApp / message. |
+| **Property** | Photo gallery, key facts, description, amenities, location with a Maps hand-off, the landlord card, the contact unlock (one price per listing, paid by M-Pesa in the app), and a message to Kheja_Link. |
 | **Saved** | Your shortlist. Private to you at the database level. |
 | **Account** | Sign in and sign up (with the seeker/landlord choice), profile editing, and for landlords: their listings and their inquiries inbox. |
 
-Sending an inquiry works **without an account** — the database permits an anonymous insert
-into `inquiries` but never an anonymous read, so the details entered are visible only to the
-listing's owner and the sender.
+Messaging Kheja_Link about a listing works **without an account** — the database permits an
+anonymous insert into `inquiries` (addressed to the admins) but never an anonymous read, so the
+details entered are visible only to Kheja_Link and the sender. Signed-in senders get the reply
+in their Inbox.
 
 ---
 

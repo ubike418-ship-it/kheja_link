@@ -13,10 +13,22 @@ export const metadata: Metadata = {
     "How Kheja_Link works, how to stay safe when house hunting in Meru, and how to reach us.",
 };
 
+/**
+ * No amounts on this page on purpose: a tenant first sees the unlock price on
+ * the payment screen in the app, when they tap "Unlock contact".
+ */
 const faqs = [
   {
     q: "Is Kheja_Link free to use?",
-    a: "Yes. Searching, filtering, saving homes and contacting landlords are all free for house hunters. You do not even need an account to browse or send an inquiry.",
+    a: "Searching, filtering, saving homes and messaging the Kheja_Link team are free. When you find a home you want, you unlock it in the app to get the landlord's and caretaker's numbers and the exact location — you see the amount and approve it by M-Pesa at that moment, and nothing is charged before.",
+  },
+  {
+    q: "How does unlocking work?",
+    a: "Tap \"Unlock contact\" on a listing in the app. You pay once for that listing and the details stay yours — you are never charged twice for the same house. It is not part of your rent or deposit, which you pay the landlord directly.",
+  },
+  {
+    q: "Can I get money back?",
+    a: "Yes — give us a house. After you have unlocked a listing, tell us about a vacant house (the one you are moving out of, or one whose landlord agrees to list with us). Once our team approves it, part of your unlock is refunded. You can follow it in the app under Unlocks & refunds.",
   },
   {
     q: "Do I need an account?",
@@ -28,7 +40,7 @@ const faqs = [
   },
   {
     q: "How do I contact a landlord?",
-    a: "Every listing has a call and WhatsApp button, plus a message form. Your message goes directly to the landlord who posted the house — Kheja_Link never sits in the middle of the deal.",
+    a: `Unlock the listing in the app to get the landlord's and caretaker's numbers and the exact location, then call or WhatsApp them yourself. Questions before you unlock go to the Kheja_Link team through the message form on the listing — messages no longer go to landlords directly. Our reply appears in your in-app Inbox.`,
   },
   {
     q: "What does 'verified' mean?",

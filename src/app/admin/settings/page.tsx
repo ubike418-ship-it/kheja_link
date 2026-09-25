@@ -8,10 +8,9 @@ export const metadata = { title: "Business settings — Admin" };
 
 /** Shown here in this order; anything else in app_settings is internal. */
 const EDITABLE = [
-  "hunting_fee",
-  "hunting_fee_currency",
-  "hunting_fee_unlocks_contacts",
   "contact_unlock_fee",
+  "house_refund_amount",
+  "contact_unlock_currency",
   "landlord_listing_fee",
   "landlord_listing_fee_offer_label",
   "landlord_listing_fee_offer_ends_on",
@@ -45,8 +44,9 @@ export default async function SettingsPage() {
         <div className="space-y-2 max-w-2xl">
           <h2 className="text-3xl font-black text-zinc-900 dark:text-white tracking-tighter">Business settings</h2>
           <p className="text-zinc-500 font-medium">
-            Prices and switches both apps read at runtime — change them here instead of in code. The
-            hunting fee is always charged at the amount set here when the tenant starts paying.
+            Prices and switches both apps read at runtime — change them here instead of in code. An
+            unlock is always charged at the price set here when the tenant taps &ldquo;Unlock
+            contact&rdquo;, and the house refund must stay below it.
           </p>
           {lastRun && (
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">
@@ -61,7 +61,7 @@ export default async function SettingsPage() {
           </p>
         ) : rows.length === 0 ? (
           <p className="p-6 rounded-[2rem] bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 font-bold">
-            No settings found. Run supabase/migrations/0012_hunting_availability_requests.sql first.
+            No settings found. Run supabase/migrations/0012 to 0015 first.
           </p>
         ) : (
           <div className="space-y-3">

@@ -225,7 +225,7 @@ void marketplaceTests(KhejaApi Function() apiOf, bool configured) {
     }, skip: skip);
   });
 
-  group('the KSh 150 paywall', () {
+  group('the contact unlock paywall', () {
     test('contact details are not readable while locked', () async {
       final list = await apiOf().fetchProperties();
       final contact = await apiOf().fetchPropertyContact(list.first.id);
@@ -432,7 +432,8 @@ void release12Tests(KhejaApi Function() apiOf, bool configured) {
       // private rows — the management line — must still never come back.
       final rows = await rawClient().from('app_settings').select('key, value');
       final keys = rows.map((r) => r['key']).toSet();
-      expect(keys, contains('hunting_fee'));
+      expect(keys, contains('contact_unlock_fee'));
+      expect(keys, contains('house_refund_amount'));
       expect(keys, isNot(contains('management_phone')));
       expect(keys, isNot(contains('management_name')));
       expect(rows.map((r) => r['value']), isNot(contains('+254710655709')));

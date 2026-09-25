@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Truck, Moon, SlidersHorizontal } from "lucide-react";
+import { Truck, Moon, SlidersHorizontal, MessageSquare, HandCoins } from "lucide-react";
 
 const tabs = [
+  { href: "/admin/messages", label: "Messages", icon: MessageSquare },
+  { href: "/admin/refunds", label: "Houses & refunds", icon: HandCoins },
   { href: "/admin/providers", label: "Service providers", icon: Truck },
   { href: "/admin/stays", label: "Stays waitlist", icon: Moon },
   { href: "/admin/settings", label: "Business settings", icon: SlidersHorizontal },

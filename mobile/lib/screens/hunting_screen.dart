@@ -4,21 +4,26 @@ import '../config/theme.dart';
 import '../main.dart';
 import '../models/models.dart';
 import '../services/kheja_api.dart';
-import '../services/payments.dart';
 import '../widgets/brand.dart';
 import '../widgets/kheja_sheet.dart';
 import '../widgets/states.dart';
 import 'auth_screen.dart';
-import 'payment_sheet.dart';
+import 'give_house_sheet.dart';
 
-/// The KES 500 house hunting fee: what it is, what it is not, and paying it.
+/// Unlocks & refunds: how unlocking works, what it is not, and giving
+/// Kheja_Link a house — with the tenant's own houses and refunds underneath.
+///
+/// Amounts appear here only for a tenant who has already paid for an unlock.
+/// Everyone else first sees the price on the payment screen, when they tap
+/// "Unlock contact" on a home they want.
+///
+/// Nothing is paid on this screen. The unlock is charged on the listing itself,
+/// when the tenant taps "Unlock contact". The House Hunting pass that used to
+/// be sold here was retired in 0015; a pass bought before then still unlocks
+/// every listing and is shown as such.
 ///
 /// Also the last screen of the tenant tutorial ([isOnboarding]), where it
 /// ends in "Continue" rather than being a page you navigate back from.
-///
-/// Paying happens in Kheja_Link's own payment screen ([PaymentSheet]). The fee
-/// is only ever marked paid after the server hears it from Paystack, so this
-/// screen only ever reflects a status it was given.
 class HuntingScreen extends StatefulWidget {
   const HuntingScreen({super.key, this.isOnboarding = false});
 
@@ -28,127 +33,85 @@ class HuntingScreen extends StatefulWidget {
   State<HuntingScreen> createState() => _HuntingScreenState();
 }
 
-class _HuntingScreenState extends State<HuntingScreen> with WidgetsBindingObserver {
+class _HuntingScreenState extends State<HuntingScreen> {
   BusinessSettings _settings = const BusinessSettings();
-  HuntingService _service = HuntingService.none;
+  HuntingService _pass = HuntingService.none;
+  List<HouseSubmission> _houses = const [];
+  bool _hasPaidUnlock = false;
   bool _loading = true;
-  bool _paying = false;
   String? _loadError;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    // Show the cached price at once, so this renders with no data.
+    // Show the cached prices at once, so this renders with no data.
     khejaApi.cachedBusinessSettings().then((s) {
       if (mounted) setState(() => _settings = s);
     });
     _load();
   }
 
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Back from a card page: see whether the payment has landed.
-    if (state == AppLifecycleState.resumed && _service.isPending) _load(quiet: true);
-  }
-
   Future<void> _load({bool quiet = false}) async {
     if (!quiet) setState(() => _loading = true);
     final settings = await khejaApi.fetchBusinessSettings();
-    HuntingService service = _service;
+    var pass = _pass;
+    var houses = _houses;
+    var hasPaid = _hasPaidUnlock;
     String? error;
-    try {
-      service = await khejaApi.fetchHuntingService();
-    } catch (e) {
-      error = describeError(e);
+    if (khejaApi.isSignedIn) {
+      try {
+        final results = await Future.wait<Object>([
+          khejaApi.fetchHuntingService().catchError((_) => HuntingService.none),
+          khejaApi.fetchMyHouseSubmissions(),
+          khejaApi.fetchUnlockedPropertyIds(),
+        ]);
+        pass = results[0] as HuntingService;
+        houses = results[1] as List<HouseSubmission>;
+        hasPaid = (results[2] as Set<String>).isNotEmpty;
+      } catch (e) {
+        error = describeError(e);
+      }
     }
     if (!mounted) return;
-    final justActivated = !_service.isActive && service.isActive;
     setState(() {
       _settings = settings;
-      _service = service;
+      _pass = pass;
+      _houses = houses;
+      _hasPaidUnlock = hasPaid;
       _loading = false;
-      _loadError = khejaApi.isSignedIn ? error : null;
+      _loadError = error;
     });
-    if (justActivated) {
-      showKhejaSnack(context, 'Payment received. Your House Hunting service is active.');
-    }
   }
 
-  Future<void> _pay() async {
+  Future<void> _giveHouse() async {
     if (!khejaApi.isSignedIn) {
       await Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => const AuthScreen(role: 'seeker')),
       );
       if (!mounted || !khejaApi.isSignedIn) return;
-      await _load(quiet: true);
-      if (_service.isActive || !mounted) return;
-    }
-
-    setState(() => _paying = true);
-
-    // The database creates the pending payment and prices it; the app never
-    // sends an amount.
-    final ({String reference, num amount, String currency})? started;
-    try {
-      started = await khejaApi.startHuntingPayment();
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _paying = false);
-      showKhejaSnack(context, describeError(error), isError: true);
-      return;
     }
     if (!mounted) return;
-    setState(() => _paying = false);
-
-    if (started == null) {
-      showKhejaSnack(context, 'Your House Hunting service is already active.');
-      await _load(quiet: true);
-      return;
-    }
-
-    final paid = await showKhejaSheet<bool>(
+    final sent = await showKhejaSheet<bool>(
       context,
-      PaymentSheet(
-        reference: started.reference,
-        amountLabel: formatPrice(started.amount, started.currency),
-        title: 'House hunting fee',
-        what: 'Kheja_Link house hunting service — separate from rent and deposit.',
-        cardCheckoutUrl: () => KhejaCheckout.cardCheckoutUrl(started!.reference),
-      ),
+      GiveHouseSheet(settings: _settings, showRefund: _hasPaidUnlock),
     );
-
-    if (!mounted) return;
+    if (sent != true || !mounted) return;
+    showKhejaSnack(context, 'House sent. We will tell you in your Inbox how it goes.');
     await _load(quiet: true);
-    if (paid == true && mounted) {
-      showKhejaSnack(context, 'Payment received. Your House Hunting service is active.');
-    }
-  }
-
-  Future<void> _checkAgain() async {
-    await _load(quiet: true);
-    if (!mounted || _service.isActive) return;
-    showKhejaSnack(
-      context,
-      'No payment confirmed yet. If you have just paid, give it a minute and check again.',
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final fee = _settings.huntingFeeLabel;
+    final fee = _settings.unlockFeeLabel;
+    final refund = _settings.refundLabel;
+    // Someone who has paid already knows the price; nobody else sees it here.
+    final showPrices = _hasPaidUnlock || _pass.isActive;
 
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: !widget.isOnboarding,
-        title: widget.isOnboarding ? null : const Text('House Hunting'),
+        title: widget.isOnboarding ? null : const Text('Unlocks & refunds'),
       ),
       body: RefreshIndicator(
         color: KhejaColors.blue,
@@ -157,141 +120,89 @@ class _HuntingScreenState extends State<HuntingScreen> with WidgetsBindingObserv
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 40),
           physics: const AlwaysScrollableScrollPhysics(),
           children: [
-            const Eyebrow('House hunting service', icon: Icons.travel_explore_rounded),
+            const Eyebrow('How pricing works', icon: Icons.lock_open_rounded),
             const SizedBox(height: 10),
             Text(
-              widget.isOnboarding ? 'Find your next home with Kheja_Link.' : 'House Hunting',
+              widget.isOnboarding ? 'Find your next home with Kheja_Link.' : 'Unlocks & refunds',
               style: theme.textTheme.displaySmall,
             ),
             const SizedBox(height: 10),
             Text(
-              'Pay the house hunting fee, tell us what you are looking for, and discover '
-              'suitable homes available through Kheja_Link.',
+              'Browsing, saving homes and messaging Kheja_Link are free. When you find a home '
+              'you want, unlock it to get the landlord\'s and caretaker\'s numbers and the '
+              'exact location.',
               style: theme.textTheme.bodyLarge?.copyWith(color: KhejaColors.zinc500, height: 1.5),
             ),
             const SizedBox(height: 22),
 
-            _FeeCard(fee: fee, service: _service, signedIn: khejaApi.isSignedIn),
-            const SizedBox(height: 22),
-
-            Text('What the fee is for', style: theme.textTheme.titleLarge),
-            const SizedBox(height: 12),
-            _Point(
-              icon: Icons.handshake_rounded,
-              color: KhejaColors.blue,
-              text: 'Kheja_Link\'s house hunting service: we help connect you with a '
-                  'suitable home that is available through Kheja_Link.',
-            ),
-            if (_settings.huntingUnlocksContacts)
-              _Point(
-                icon: Icons.lock_open_rounded,
-                color: KhejaColors.emerald,
-                text: 'While your service is active, the landlord\'s and caretaker\'s '
-                    'numbers and the exact location are unlocked on every listing — '
-                    'no separate ${formatPrice(_settings.contactUnlockFee)} unlocks.',
-              ),
-            _Point(
-              icon: Icons.key_rounded,
-              color: KhejaColors.purple,
-              text: 'Once you are connected with a home, you rent it directly from the '
-                  'landlord through the normal rental process.',
-            ),
-            const SizedBox(height: 18),
-
-            _NotIncluded(fee: fee),
-            const SizedBox(height: 18),
-
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: KhejaColors.amber.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(KhejaRadius.lg),
-                border: Border.all(color: KhejaColors.amber.withValues(alpha: 0.3)),
-              ),
-              child: const Text(
-                'Kheja_Link cannot guarantee a particular house: which homes are free '
-                'depends on landlords. You pay once; paying again is blocked while your '
-                'service is active.',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                  color: KhejaColors.zinc500,
-                  height: 1.5,
-                ),
-              ),
-            ),
-            const SizedBox(height: 26),
-
-            if (_loadError != null) ...[
-              Text(
-                _loadError!,
-                style: const TextStyle(color: KhejaColors.red, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 12),
+            if (showPrices) ...[
+              _FeeCard(fee: fee, pass: _pass),
+              const SizedBox(height: 22),
             ],
 
-            if (_service.isActive)
-              _ActiveBanner(service: _service)
-            else ...[
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: (_paying || _loading) ? null : _pay,
-                  style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(58)),
-                  icon: _paying
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Icon(Icons.lock_rounded, size: 20),
-                  label: Text(
-                    _paying
-                        ? 'Opening secure checkout…'
-                        : khejaApi.isSignedIn
-                            ? 'Pay $fee hunting fee'
-                            : 'Sign in to pay $fee',
-                  ),
-                ),
-              ),
-              if (_service.isPending) ...[
-                const SizedBox(height: 10),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: _paying ? null : _checkAgain,
-                    icon: const Icon(Icons.refresh_rounded, size: 18),
-                    label: const Text('I have paid — check again'),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 10),
-              const Text(
-                'You pay on Paystack\'s secure checkout page. Your payment is confirmed '
-                'by Paystack directly — not by this app.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w600,
-                  color: KhejaColors.zinc400,
-                  height: 1.5,
-                ),
-              ),
+            Text('How unlocking works', style: theme.textTheme.titleLarge),
+            const SizedBox(height: 12),
+            _Point(
+              icon: Icons.touch_app_rounded,
+              color: KhejaColors.blue,
+              text: showPrices
+                  ? 'Open a listing and tap Unlock contact. You pay $fee by M-Pesa right '
+                      'there — nothing is charged before that.'
+                  : 'Open a listing and tap Unlock contact. You see the amount and pay by '
+                      'M-Pesa right there — nothing is charged before you approve it.',
+            ),
+            const _Point(
+              icon: Icons.verified_user_rounded,
+              color: KhejaColors.emerald,
+              text: 'Once per listing. The details stay yours, and you are never charged '
+                  'twice for the same home.',
+            ),
+            const _Point(
+              icon: Icons.key_rounded,
+              color: KhejaColors.purple,
+              text: 'You then rent directly from the landlord through the normal rental process.',
+            ),
+            const SizedBox(height: 18),
+
+            if (_settings.refundsEnabled && showPrices)
+              _RefundOffer(fee: fee, refund: refund, onGiveHouse: _giveHouse)
+            else
+              _GiveHousePlain(onGiveHouse: _giveHouse),
+            const SizedBox(height: 18),
+
+            const _NotIncluded(),
+            const SizedBox(height: 26),
+
+            if (khejaApi.isSignedIn) ...[
+              Text('Your houses & refunds', style: theme.textTheme.titleLarge),
+              const SizedBox(height: 12),
+              if (_loadError != null)
+                Text(
+                  _loadError!,
+                  style: const TextStyle(color: KhejaColors.red, fontWeight: FontWeight.w700),
+                )
+              else if (_loading && _houses.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Center(child: CircularProgressIndicator(color: KhejaColors.blue)),
+                )
+              else if (_houses.isEmpty)
+                const Text(
+                  'Houses you give us, and any refund they earn, appear here.',
+                  style: TextStyle(color: KhejaColors.zinc500, fontWeight: FontWeight.w600),
+                )
+              else
+                for (final house in _houses) _HouseTile(house: house),
             ],
 
             if (widget.isOnboarding) ...[
               const SizedBox(height: 22),
               SizedBox(
                 width: double.infinity,
-                child: _service.isActive
-                    ? FilledButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('Continue'),
-                      )
-                    : OutlinedButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('Continue — I will decide later'),
-                      ),
+                child: FilledButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Continue'),
+                ),
               ),
               const SizedBox(height: 14),
               const Text(
@@ -309,11 +220,10 @@ class _HuntingScreenState extends State<HuntingScreen> with WidgetsBindingObserv
 }
 
 class _FeeCard extends StatelessWidget {
-  const _FeeCard({required this.fee, required this.service, required this.signedIn});
+  const _FeeCard({required this.fee, required this.pass});
 
   final String fee;
-  final HuntingService service;
-  final bool signedIn;
+  final HuntingService pass;
 
   @override
   Widget build(BuildContext context) {
@@ -330,7 +240,7 @@ class _FeeCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('HOUSE HUNTING FEE',
+          Text('UNLOCK A LISTING',
               style: kEyebrowStyle.copyWith(color: Colors.white.withValues(alpha: 0.75))),
           const SizedBox(height: 6),
           Text(
@@ -344,13 +254,15 @@ class _FeeCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'One-off · paid to Kheja_Link · not rent',
+            'Per listing · same for everyone · paid once · not rent',
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.85),
               fontWeight: FontWeight.w800,
             ),
           ),
-          if (signedIn) ...[
+          // A House Hunting pass bought before it was retired still covers
+          // every listing.
+          if (pass.isActive) ...[
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
@@ -361,15 +273,13 @@ class _FeeCard extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    service.isActive ? Icons.check_circle_rounded : Icons.schedule_rounded,
-                    size: 14,
-                    color: Colors.white,
-                  ),
+                  const Icon(Icons.check_circle_rounded, size: 14, color: Colors.white),
                   const SizedBox(width: 6),
-                  Text(
-                    'STATUS: ${service.label.toUpperCase()}',
-                    style: kEyebrowStyle.copyWith(color: Colors.white),
+                  Flexible(
+                    child: Text(
+                      'YOUR HOUSE HUNTING PASS UNLOCKS EVERY LISTING',
+                      style: kEyebrowStyle.copyWith(color: Colors.white),
+                    ),
                   ),
                 ],
               ),
@@ -381,11 +291,159 @@ class _FeeCard extends StatelessWidget {
   }
 }
 
-/// Makes it impossible to mistake the hunting fee for rent.
-class _NotIncluded extends StatelessWidget {
-  const _NotIncluded({required this.fee});
+/// "Give us a house" without amounts, for tenants who have not unlocked yet.
+class _GiveHousePlain extends StatelessWidget {
+  const _GiveHousePlain({required this.onGiveHouse});
+
+  final VoidCallback onGiveHouse;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: KhejaColors.emerald.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(KhejaRadius.xl),
+        border: Border.all(color: KhejaColors.emerald.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('KNOW A VACANT HOUSE?', style: kEyebrowStyle.copyWith(color: KhejaColors.emerald)),
+          const SizedBox(height: 8),
+          Text(
+            'Moving out, or know a landlord who wants to list? Tell us about the house and we '
+            'will check it with the landlord.',
+            style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600, height: 1.5),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: onGiveHouse,
+              style: FilledButton.styleFrom(backgroundColor: KhejaColors.emerald),
+              icon: const Icon(Icons.add_home_rounded, size: 20),
+              label: const Text('Give us a house'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RefundOffer extends StatelessWidget {
+  const _RefundOffer({required this.fee, required this.refund, required this.onGiveHouse});
 
   final String fee;
+  final String refund;
+  final VoidCallback onGiveHouse;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: KhejaColors.emerald.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(KhejaRadius.xl),
+        border: Border.all(color: KhejaColors.emerald.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('GIVE US A HOUSE, GET $refund BACK',
+              style: kEyebrowStyle.copyWith(color: KhejaColors.emerald)),
+          const SizedBox(height: 8),
+          Text(
+            'Paid $fee to unlock a listing? Tell us about a vacant house — the one you are '
+            'moving out of, or one whose landlord agrees to list with us. Once we approve it, '
+            'we refund $refund. One refund per unlock; without a house, the $fee is not refunded.',
+            style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600, height: 1.5),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: onGiveHouse,
+              style: FilledButton.styleFrom(backgroundColor: KhejaColors.emerald),
+              icon: const Icon(Icons.add_home_rounded, size: 20),
+              label: const Text('Give us a house'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HouseTile extends StatelessWidget {
+  const _HouseTile({required this.house});
+
+  final HouseSubmission house;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final refund = house.refund;
+    final (color, icon) = switch (refund?.status ?? house.status) {
+      'paid' => (KhejaColors.emerald, Icons.check_circle_rounded),
+      'approved' => (KhejaColors.blue, Icons.hourglass_bottom_rounded),
+      'rejected' => (KhejaColors.zinc500, Icons.block_rounded),
+      _ => (KhejaColors.amber, Icons.schedule_rounded),
+    };
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(KhejaRadius.lg),
+        border: Border.all(color: theme.colorScheme.outline),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(house.title, style: theme.textTheme.titleSmall),
+                const SizedBox(height: 2),
+                Text(
+                  refund == null
+                      ? '${house.statusLabel} · no refund applies'
+                      : '${house.statusLabel} · ${refund.amountLabel} ${refund.statusLabel.toLowerCase()}',
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: color),
+                ),
+                if (refund?.payoutReference != null)
+                  Text(
+                    'M-Pesa reference ${refund!.payoutReference}',
+                    style: const TextStyle(fontSize: 12, color: KhejaColors.zinc500),
+                  ),
+                if (house.adminNote != null && house.adminNote!.trim().isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      '"${house.adminNote!.trim()}"',
+                      style: const TextStyle(fontSize: 12, color: KhejaColors.zinc500),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Makes it impossible to mistake the unlock for rent.
+class _NotIncluded extends StatelessWidget {
+  const _NotIncluded();
 
   static const _items = [
     (Icons.home_rounded, 'Monthly rent'),
@@ -410,7 +468,7 @@ class _NotIncluded extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('NOT PART OF THE $fee', style: kEyebrowStyle.copyWith(color: KhejaColors.red)),
+          Text('NOT PART OF AN UNLOCK', style: kEyebrowStyle.copyWith(color: KhejaColors.red)),
           const SizedBox(height: 6),
           Text(
             'These are paid separately, directly to the landlord or the service provider:',
@@ -472,40 +530,6 @@ class _Point extends StatelessWidget {
                 text,
                 style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, height: 1.45),
               ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ActiveBanner extends StatelessWidget {
-  const _ActiveBanner({required this.service});
-
-  final HuntingService service;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: KhejaColors.emerald.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(KhejaRadius.xl),
-        border: Border.all(color: KhejaColors.emerald.withValues(alpha: 0.35)),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.verified_rounded, color: KhejaColors.emerald),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              service.status == 'matched'
-                  ? 'You have been matched with a home. Keep an eye on My Requests.'
-                  : 'Your House Hunting service is active'
-                      '${service.activatedAt != null ? ' since ${formatShortDate(service.activatedAt!)}' : ''}. '
-                      'Browse homes and send requests.',
-              style: const TextStyle(fontWeight: FontWeight.w800, height: 1.45),
             ),
           ),
         ],

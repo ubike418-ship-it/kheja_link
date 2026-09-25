@@ -6,7 +6,7 @@ import SignUpForm from "@/components/SignUpForm";
 export const metadata: Metadata = {
   title: "Create an account",
   description:
-    "Join Kheja_Link to save homes you like, contact landlords directly, or list your own property.",
+    "Join Kheja_Link to save homes you like, unlock landlord contacts, or list your own property.",
 };
 
 export default function SignUpPage() {

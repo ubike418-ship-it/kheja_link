@@ -7,8 +7,7 @@ import { createClient } from "@supabase/supabase-js";
  *
  * Paystack signs every event with HMAC-SHA512 over the raw body using the
  * secret key. We verify that before trusting anything: without it, anyone who
- * learned the URL could unlock every listing, or activate the house hunting
- * service, for free.
+ * learned the URL could unlock every listing for free.
  *
  * Point Paystack at https://<your-domain>/api/payments/webhook
  */
@@ -58,19 +57,20 @@ export async function POST(request: Request) {
 
   const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
 
-  // kh_ is the house hunting fee, kl_ the per-listing contact unlock. The
-  // hunting fee is checked against what Paystack actually charged: the
-  // database refuses an underpayment, and a retried event is a no-op.
+  // kh_ is the retired house hunting pass, kl_ the per-listing contact unlock.
+  // Both are checked against what Paystack actually charged: the database
+  // refuses an underpayment, and a retried event is a no-op.
+  const amountReceived = typeof event.data?.amount === "number" ? event.data.amount / 100 : null;
   const { error } = reference.startsWith("kh_")
     ? await admin.rpc("confirm_hunting_payment", {
         p_reference: reference,
         p_provider: "paystack",
-        p_amount_received:
-          typeof event.data?.amount === "number" ? event.data.amount / 100 : null,
+        p_amount_received: amountReceived,
       })
     : await admin.rpc("confirm_contact_unlock", {
         p_reference: reference,
         p_provider: "paystack",
+        p_amount_received: amountReceived,
       });
 
   if (error) {

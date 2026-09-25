@@ -6,9 +6,11 @@ import '../models/models.dart';
 import '../services/kheja_api.dart';
 import '../widgets/states.dart';
 
-/// Contact the landlord. No account required — the database allows an anonymous
+/// Message Kheja_Link about a listing. Messages no longer go to the landlord
+/// for free: the database addresses every new one to the admins, who reply in
+/// the sender's Inbox. No account required — the database allows an anonymous
 /// insert into `inquiries` but never an anonymous read, so the details entered
-/// here are only ever visible to the listing's owner and the sender.
+/// here are only ever visible to Kheja_Link and the sender.
 class InquirySheet extends StatefulWidget {
   const InquirySheet({super.key, required this.property});
 
@@ -60,7 +62,7 @@ class _InquirySheetState extends State<InquirySheet> {
     if (_email.text.trim().isEmpty && _phone.text.trim().isEmpty) {
       showKhejaSnack(
         context,
-        'Leave an email or a phone number so the landlord can reply.',
+        'Leave an email or a phone number so we can reply.',
         isError: true,
       );
       return;
@@ -120,11 +122,12 @@ class _InquirySheetState extends State<InquirySheet> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Ask about this home',
+                      Text('Message Kheja_Link',
                           style: theme.textTheme.headlineSmall),
                       const SizedBox(height: 8),
                       const Text(
-                        'No account needed — just leave a way to reach you.',
+                        'Questions about this home come to our team, not the landlord. '
+                        'Signed in? Our reply lands in your Inbox.',
                         style: TextStyle(
                           color: KhejaColors.zinc500,
                           fontWeight: FontWeight.w600,
@@ -138,7 +141,7 @@ class _InquirySheetState extends State<InquirySheet> {
                         textCapitalization: TextCapitalization.words,
                         validator: (value) {
                           final text = value?.trim() ?? '';
-                          if (text.length < 2) return 'Tell the landlord your name';
+                          if (text.length < 2) return 'Tell us your name';
                           return null;
                         },
                       ),
@@ -182,7 +185,7 @@ class _InquirySheetState extends State<InquirySheet> {
                         validator: (value) {
                           final text = value?.trim() ?? '';
                           if (text.length < 10) {
-                            return 'Add a short message so the landlord can help';
+                            return 'Add a short message so we can help';
                           }
                           if (text.length > 2000) {
                             return 'Keep your message under 2000 characters';
@@ -204,7 +207,7 @@ class _InquirySheetState extends State<InquirySheet> {
                                 ),
                               )
                             : const Icon(Icons.send_rounded, size: 19),
-                        label: Text(_isSending ? 'Sending…' : 'Send message'),
+                        label: Text(_isSending ? 'Sending…' : 'Send to Kheja_Link'),
                       ),
                     ],
                   ),

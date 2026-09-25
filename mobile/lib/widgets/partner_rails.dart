@@ -70,7 +70,7 @@ class PartnerRails extends StatelessWidget {
               ? '${partners.map((p) => p.name).join(', ')} '
                   '${partners.length == 1 ? 'is a Kheja_Link partner' : 'are Kheja_Link partners'}. '
                   'Their prices are agreed with them directly and are separate from '
-                  'your rent and the house hunting fee.'
+                  'your rent and any listing unlock.'
               : 'Partners are marked. Other companies are independent businesses '
                   'listed for your convenience — Kheja_Link is not responsible for '
                   'their service. Logos belong to their owners.',

@@ -274,9 +274,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             Text('House hunting', style: theme.textTheme.titleLarge),
             const SizedBox(height: 14),
             _Tile(
-              icon: Icons.travel_explore_rounded,
-              label: 'House Hunting & payments',
-              subtitle: 'The house hunting fee and your service status',
+              icon: Icons.lock_open_rounded,
+              label: 'Unlocks & refunds',
+              subtitle: 'How unlocking works, give us a house, your refunds',
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const HuntingScreen()),
               ),

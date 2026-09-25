@@ -64,7 +64,7 @@ export default function InquiryList({ inquiries }: { inquiries: InquiryWithPrope
           <MessageSquare className="w-12 h-12 text-zinc-300 mx-auto" />
           <p className="text-zinc-500 font-medium max-w-md mx-auto">
             {inquiries.length === 0
-              ? "Nobody has messaged you yet. Once your listings are published, inquiries land here."
+              ? "No earlier inquiries. Tenants now reach you by unlocking your listing, or through the Kheja_Link team."
               : "No inquiries with that status."}
           </p>
         </div>

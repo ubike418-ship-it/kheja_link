@@ -158,7 +158,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       'request' || 'booking' || 'check_in' || 'move_out' => [
           (label: fromLandlordSide ? 'View requests' : 'My requests', onTap: () => _openRequests(n), primary: true),
         ],
-      'inquiry' when _isLandlord => [
+      // Inquiries landlords received before messages moved to Kheja_Link.
+      'inquiry' when _isLandlord && n.title == 'New inquiry' => [
           (
             label: 'Read message',
             onTap: () {
@@ -168,9 +169,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             primary: true,
           ),
         ],
-      'payment' => [
+      // Refund updates, and "House received / approved / not approved".
+      'payment' || 'system'
+          when n.propertyId == null && (n.type == 'payment' || n.title.startsWith('House ')) =>
+        [
           (
-            label: 'House Hunting',
+            label: 'Unlocks & refunds',
             onTap: () {
               _markRead(n);
               Navigator.of(context).push(MaterialPageRoute(builder: (_) => const HuntingScreen()));

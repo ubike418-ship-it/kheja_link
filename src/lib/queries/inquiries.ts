@@ -2,8 +2,10 @@ import { createClient } from "@/lib/supabase/server";
 import type { InquiryWithProperty } from "@/lib/types";
 
 /**
- * Inquiries hold personal data. RLS limits SELECT to the listing owner and the
- * original sender, so these queries cannot leak another landlord's leads.
+ * Inquiries hold personal data. RLS limits SELECT to the listing owner (for
+ * inquiries addressed to them before 0015), the original sender and, for
+ * messages to Kheja_Link, the admins — so these cannot leak another landlord's
+ * leads.
  */
 
 export async function getInquiriesForOwner(): Promise<InquiryWithProperty[]> {
@@ -12,6 +14,7 @@ export async function getInquiriesForOwner(): Promise<InquiryWithProperty[]> {
   const { data, error } = await supabase
     .from("inquiries")
     .select("*, property:properties ( id, title, slug )")
+    .eq("recipient", "landlord")
     .order("created_at", { ascending: false });
 
   if (error) throw new Error(`Could not load inquiries: ${error.message}`);

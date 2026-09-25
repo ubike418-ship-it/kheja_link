@@ -42,13 +42,13 @@ export const profileSchema = z.object({
 
 export const inquirySchema = z.object({
   propertyId: z.string().uuid("Unknown property"),
-  name: z.string().trim().min(2, "Tell the landlord your name").max(120),
+  name: z.string().trim().min(2, "Tell us your name").max(120),
   email: z.string().trim().toLowerCase().email("Enter a valid email address").optional().or(z.literal("")),
   phone: phone.optional().or(z.literal("")),
   message: z
     .string()
     .trim()
-    .min(10, "Add a short message so the landlord can help you")
+    .min(10, "Add a short message so we can help you")
     .max(2000, "Keep your message under 2000 characters"),
 });
 
@@ -160,6 +160,25 @@ export const providerSchema = z.object({
 export const settingSchema = z.object({
   key: z.string().regex(/^[a-z0-9_]{2,80}$/),
   value: z.string().trim().max(500, "Keep values under 500 characters"),
+});
+
+/** Kheja_Link answering a message in-app. Mirrors inquiries_reply_len. */
+export const adminReplySchema = z.object({
+  inquiryId: z.string().uuid(),
+  reply: z.string().trim().min(1, "Write a reply").max(2000, "Keep the reply under 2000 characters"),
+});
+
+/** Approving or rejecting a house a tenant gave us. Mirrors house_submissions_admin_note_len. */
+export const houseReviewSchema = z.object({
+  submissionId: z.string().uuid(),
+  decision: z.enum(["approve", "reject"]),
+  note: z.string().trim().max(500, "Keep the note under 500 characters").optional().or(z.literal("")),
+});
+
+/** The refund has been sent. Mirrors unlock_refunds_ref_len. */
+export const refundPaidSchema = z.object({
+  refundId: z.string().uuid(),
+  reference: z.string().trim().max(60, "Keep the reference under 60 characters").optional().or(z.literal("")),
 });
 
 export const feeAllocationSchema = z.object({

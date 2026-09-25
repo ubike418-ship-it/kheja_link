@@ -18,8 +18,8 @@ class KhejaApi {
   final SupabaseClient _client;
 
   /// Explicit, because contact_phone, contact_whatsapp, latitude and longitude
-  /// are revoked from the API roles — they sit behind the KSh 150 unlock and
-  /// come back only through get_property_contact(). '*' would be denied.
+  /// are revoked from the API roles — they sit behind the paid contact unlock
+  /// and come back only through get_property_contact(). '*' would be denied.
   static const _propertyColumns =
       'id, owner_id, title, slug, description, property_type_id, location_id, address_line, price_amount, price_currency, price_period, deposit_months, bedrooms, bathrooms, size_sqft, is_premium, is_furnished, status, available_from, view_count, published_at, created_at, updated_at, like_count, house_rules, building_name, floor_number, service_charge, water_billing, water_notes, electricity_billing, parking_spaces, pets_allowed, min_lease_months, notice_months, nearby, security_details, internet_ready, is_gated, has_balcony, availability, notice_date';
 
@@ -315,7 +315,9 @@ class KhejaApi {
   }
 
   // ---------------------------------------------------------------------------
-  // Inquiries — guests may insert, but nobody but the owner and sender can read
+  // Inquiries — messages to Kheja_Link. Guests may insert, but only the admins
+  // and the sender can read one back. Free messages to landlords ended in 0015;
+  // landlords keep the inquiries they received before that.
   // ---------------------------------------------------------------------------
 
   Future<void> sendInquiry({
@@ -332,13 +334,17 @@ class KhejaApi {
       'message': message,
       'email': (email?.trim().isEmpty ?? true) ? null : email!.trim(),
       'phone': (phone?.trim().isEmpty ?? true) ? null : phone!.trim(),
+      'recipient': 'admin',
     });
   }
 
+  /// Inquiries tenants sent to this landlord before messages moved to
+  /// Kheja_Link.
   Future<List<Inquiry>> fetchInquiriesForOwner() async {
     final rows = await _client
         .from('inquiries')
         .select('*, property:properties ( id, title, slug )')
+        .eq('recipient', 'landlord')
         .order('created_at', ascending: false);
     return rows.map<Inquiry>((r) => Inquiry.fromMap(r)).toList();
   }
@@ -412,7 +418,7 @@ class KhejaApi {
   }
 
   // ---------------------------------------------------------------------------
-  // Contact unlock — the KSh 150 purchase
+  // Contact unlock — one price per listing (contact_unlock_fee), paid once
   //
   // The phone number, WhatsApp number and exact map position are revoked from
   // the API roles entirely. They are not hidden by the UI; the database will
@@ -448,26 +454,17 @@ class KhejaApi {
     }
   }
 
-  /// Starts an unlock and returns its reference. The caller then sends the user
-  /// to the payment page; the webhook flips the row to paid.
-  Future<String> startContactUnlock(String propertyId) async {
-    final user = currentUser;
-    if (user == null) throw const NotSignedInException();
-
-    final reference =
-        'kl_${DateTime.now().millisecondsSinceEpoch}_${propertyId.substring(0, 8)}';
-
-    await _client.from('contact_unlocks').insert({
-      'user_id': user.id,
-      'property_id': propertyId,
-      'amount': kUnlockAmount,
-      'currency': kUnlockCurrency,
-      'status': 'pending',
-      'provider': 'paystack',
-      'provider_ref': reference,
-    });
-
-    return reference;
+  /// Starts (or resumes) the checkout for one listing. The database prices it
+  /// from app_settings — the app never sends an amount — and reports
+  /// [UnlockCheckout.alreadyUnlocked] instead of selling a listing twice.
+  Future<UnlockCheckout> startContactUnlock(String propertyId) async {
+    if (!isSignedIn) throw const NotSignedInException();
+    final rows = await KhejaNetwork.run(
+      () => _client.rpc('start_contact_unlock', params: {'p_property_id': propertyId}),
+    );
+    final row = (rows as List).whereType<Map<String, dynamic>>().firstOrNull;
+    if (row == null) throw const KhejaException('Could not start the unlock. Please try again.');
+    return UnlockCheckout.fromMap(row);
   }
 
   /// The listings this person has already paid to unlock.
@@ -670,7 +667,8 @@ class KhejaApi {
   }
 
   // ---------------------------------------------------------------------------
-  // House hunting — the tenant's KES 500 service
+  // House Hunting pass — no longer sold (0015). A pass bought before then keeps
+  // every listing unlocked while it is active.
   // ---------------------------------------------------------------------------
 
   Future<HuntingService> fetchHuntingService() async {
@@ -684,20 +682,55 @@ class KhejaApi {
     return row == null ? HuntingService.none : HuntingService.fromMap(row);
   }
 
-  /// Opens (or resumes) a checkout. The database prices it from app_settings
-  /// and will not start one for a service that is already paid for — in which
-  /// case this returns null.
-  Future<({String reference, num amount, String currency})?> startHuntingPayment() async {
-    if (!isSignedIn) throw const NotSignedInException();
-    final rows = await KhejaNetwork.run(() => _client.rpc('start_hunting_payment'));
-    final row = (rows as List).whereType<Map<String, dynamic>>().firstOrNull;
-    final reference = row?['reference'] as String?;
-    if (row == null || reference == null) return null;
-    return (
-      reference: reference,
-      amount: (row['amount'] as num?) ?? 0,
-      currency: ((row['currency'] as String?) ?? 'KES').trim(),
-    );
+  // ---------------------------------------------------------------------------
+  // Give us a house — and the refund it earns
+  //
+  // The tenant writes only the house details. Whether a refund applies, and
+  // every status change after that, is decided by the database and an admin;
+  // the tenant hears about each step in their Inbox.
+  // ---------------------------------------------------------------------------
+
+  Future<void> submitHouse({
+    required String landlordPhone,
+    required String relationship,
+    String? locationId,
+    String? area,
+    String? propertyTypeId,
+    int? bedrooms,
+    num? rentAmount,
+    DateTime? availableFrom,
+    String? landlordName,
+    String? notes,
+  }) async {
+    final user = currentUser;
+    if (user == null) throw const NotSignedInException();
+    String? blank(String? v) => (v == null || v.trim().isEmpty) ? null : v.trim();
+    await KhejaNetwork.run(() => _client.from('house_submissions').insert({
+          'user_id': user.id,
+          'location_id': locationId,
+          'area': blank(area),
+          'property_type_id': propertyTypeId,
+          'bedrooms': bedrooms,
+          'rent_amount': rentAmount,
+          'available_from': availableFrom?.toIso8601String().substring(0, 10),
+          'landlord_name': blank(landlordName),
+          'landlord_phone': landlordPhone.trim(),
+          'relationship': relationship,
+          'notes': blank(notes),
+        }));
+  }
+
+  Future<List<HouseSubmission>> fetchMyHouseSubmissions() async {
+    final user = currentUser;
+    if (user == null) return const [];
+    final rows = await KhejaNetwork.run(() => _client
+        .from('house_submissions')
+        .select('id, status, created_at, area, bedrooms, admin_note, '
+            'location:locations ( name ), property_type:property_types ( name ), '
+            'refund:unlock_refunds ( id, amount, currency, status, payout_reference, paid_at )')
+        .eq('user_id', user.id)
+        .order('created_at', ascending: false));
+    return rows.map<HouseSubmission>((r) => HouseSubmission.fromMap(r)).toList();
   }
 
   // ---------------------------------------------------------------------------
@@ -1223,10 +1256,19 @@ class NotSignedInException implements Exception {
   String toString() => 'Sign in to continue.';
 }
 
+/// A failure whose message is already fit to show a person.
+class KhejaException implements Exception {
+  const KhejaException(this.message);
+  final String message;
+  @override
+  String toString() => message;
+}
+
 /// Turns a Supabase error into something worth showing a person.
 String describeError(Object error) {
   if (error is NotSignedInException) return 'Sign in to continue.';
   if (error is UploadTooLargeException) return error.message;
+  if (error is KhejaException) return error.message;
   if (error is AlreadyOnWaitlistException) {
     return 'You are already on the Stays list — we will be in touch.';
   }
@@ -1258,12 +1300,20 @@ String describeError(Object error) {
     final text = error.message.toLowerCase();
     // Rules the database enforces, in words a person can act on.
     if (error.code == '23505') {
+      if (text.contains('already unlocked')) return 'You have already unlocked this home.';
       if (text.contains('tenancies')) return 'You already have an open request for this home.';
       if (text.contains('property_interests')) return 'You are already on the list for this home.';
       return 'That has already been done.';
     }
     if (text.contains('not allowed') || text.contains('cannot be moved')) {
       return 'That change is no longer possible. Pull down to refresh.';
+    }
+    if (text.contains('no longer listed')) return 'This home is no longer listed.';
+    if (text.contains('houses waiting for review')) {
+      return 'You already have 5 houses waiting for review. We will get to them soon.';
+    }
+    if (text.contains('house_submissions_phone_len')) {
+      return 'Enter the landlord\'s phone number.';
     }
     if (text.contains('properties_notice_needs_date')) {
       return 'Choose the date the home becomes available.';

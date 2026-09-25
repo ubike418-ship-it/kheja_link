@@ -2,9 +2,16 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient, getCurrentProfile } from "@/lib/supabase/server";
-import { feeAllocationSchema, providerSchema, settingSchema } from "@/lib/validation";
+import {
+  adminReplySchema,
+  feeAllocationSchema,
+  houseReviewSchema,
+  providerSchema,
+  refundPaidSchema,
+  settingSchema,
+} from "@/lib/validation";
 import type { ActionResult } from "@/lib/types";
-import type { ApprovalStatus, WaitlistStatus } from "@/lib/supabase/database.types";
+import type { ApprovalStatus, InquiryStatus, WaitlistStatus } from "@/lib/supabase/database.types";
 
 /**
  * Admin writes. Every table touched here is admin-only under Row Level
@@ -206,15 +213,24 @@ export async function setWaitlistStatusAction(id: string, status: WaitlistStatus
 // -----------------------------------------------------------------------------
 
 const BOOLEAN_KEYS = new Set([
-  "hunting_fee_unlocks_contacts",
   "stays_enabled",
   "service_provider_registration_enabled",
   "tenant_notifications_enabled",
 ]);
-const AMOUNT_KEYS = new Set(["hunting_fee", "contact_unlock_fee", "landlord_listing_fee"]);
+const AMOUNT_KEYS = new Set(["contact_unlock_fee", "house_refund_amount", "landlord_listing_fee"]);
 const OPTIONAL_AMOUNT_KEYS = new Set(["service_provider_onboarding_fee"]);
-/** Not editable here: written by the system, or a private contact line. */
-const LOCKED_KEYS = new Set(["last_maintenance_at", "migration_0012_partners_reset"]);
+/**
+ * Not editable here: written by the system, or the retired House Hunting pass,
+ * which must keep unlocking listings for the people who already bought it.
+ */
+const LOCKED_KEYS = new Set([
+  "last_maintenance_at",
+  "migration_0012_partners_reset",
+  "migration_0015_unlock_price",
+  "hunting_fee",
+  "hunting_fee_currency",
+  "hunting_fee_unlocks_contacts",
+]);
 
 export async function saveSettingAction(key: string, value: string): Promise<ActionResult> {
   const denied = await requireAdmin();
@@ -231,8 +247,8 @@ export async function saveSettingAction(key: string, value: string): Promise<Act
   if (AMOUNT_KEYS.has(key) && !(v !== "" && Number.isFinite(Number(v)) && Number(v) >= 0)) {
     return { ok: false, error: "Enter an amount of 0 or more." };
   }
-  if (key === "hunting_fee" && Number(v) <= 0) {
-    return { ok: false, error: "The hunting fee must be more than 0." };
+  if (key === "contact_unlock_fee" && Number(v) <= 0) {
+    return { ok: false, error: "The unlock price must be more than 0." };
   }
   if (OPTIONAL_AMOUNT_KEYS.has(key) && v !== "" && !(Number.isFinite(Number(v)) && Number(v) >= 0)) {
     return { ok: false, error: "Enter an amount, or leave it blank." };
@@ -240,11 +256,22 @@ export async function saveSettingAction(key: string, value: string): Promise<Act
   if (key === "landlord_listing_fee_offer_ends_on" && v !== "" && !/^\d{4}-\d{2}-\d{2}$/.test(v)) {
     return { ok: false, error: "Use a date like 2026-12-31, or leave it blank." };
   }
-  if (key === "hunting_fee_currency" && !/^[A-Z]{3}$/.test(v)) {
+  if (key === "contact_unlock_currency" && !/^[A-Z]{3}$/.test(v)) {
     return { ok: false, error: "Use a three-letter currency code, e.g. KES." };
   }
 
   const supabase = await createClient();
+
+  // The refund comes out of the unlock payment, so it must stay below it.
+  if (key === "contact_unlock_fee" || key === "house_refund_amount") {
+    const other = key === "contact_unlock_fee" ? "house_refund_amount" : "contact_unlock_fee";
+    const { data: row } = await supabase.from("app_settings").select("value").eq("key", other).maybeSingle();
+    const fee = key === "contact_unlock_fee" ? Number(v) : Number(row?.value);
+    const refund = key === "house_refund_amount" ? Number(v) : Number(row?.value);
+    if (Number.isFinite(fee) && Number.isFinite(refund) && refund >= fee) {
+      return { ok: false, error: "The house refund must be less than the unlock price." };
+    }
+  }
   const { data, error } = await supabase
     .from("app_settings")
     .update({ value: v, updated_at: new Date().toISOString() })
@@ -306,4 +333,136 @@ export async function saveFeeAllocationAction(
     data: undefined,
     message: total < 100 ? `Saved. The remaining ${100 - total}% goes to the platform.` : "Saved.",
   };
+}
+
+// -----------------------------------------------------------------------------
+// Messages to Kheja_Link
+// -----------------------------------------------------------------------------
+
+export async function replyToMessageAction(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+
+  const parsed = adminReplySchema.safeParse({
+    inquiryId: formData.get("inquiryId"),
+    reply: formData.get("reply"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Write a reply." };
+  }
+
+  // The database stamps replied_at, marks it responded and drops the reply in
+  // the sender's Inbox.
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("inquiries")
+    .update({ admin_reply: parsed.data.reply })
+    .eq("id", parsed.data.inquiryId)
+    .eq("recipient", "admin")
+    .select("id, sender_id");
+
+  if (error || !data?.length) return { ok: false, error: "Could not send that reply." };
+
+  revalidatePath("/admin/messages");
+  return {
+    ok: true,
+    data: undefined,
+    message: data[0].sender_id
+      ? "Reply sent to their Kheja_Link Inbox."
+      : "Saved. They wrote without an account — call them on the number they left.",
+  };
+}
+
+export async function setMessageStatusAction(
+  inquiryId: string,
+  status: InquiryStatus,
+): Promise<ActionResult> {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("inquiries")
+    .update({ status })
+    .eq("id", inquiryId)
+    .eq("recipient", "admin");
+  if (error) return { ok: false, error: "Could not update that message." };
+
+  revalidatePath("/admin/messages");
+  return { ok: true, data: undefined };
+}
+
+// -----------------------------------------------------------------------------
+// Houses tenants gave us, and their refunds
+// -----------------------------------------------------------------------------
+
+export async function reviewHouseAction(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+
+  const parsed = houseReviewSchema.safeParse({
+    submissionId: formData.get("submissionId"),
+    decision: formData.get("decision"),
+    note: formData.get("note") ?? "",
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid review." };
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("admin_review_house_submission", {
+    p_submission_id: parsed.data.submissionId,
+    p_approve: parsed.data.decision === "approve",
+    p_note: parsed.data.note || null,
+  });
+
+  if (error) {
+    return {
+      ok: false,
+      error: /already been reviewed/.test(error.message)
+        ? "That house has already been reviewed."
+        : "Could not save that review.",
+    };
+  }
+
+  revalidatePath("/admin/refunds");
+  const message =
+    data === "approved_with_refund"
+      ? "Approved. The refund is approved — send it, then mark it paid."
+      : data === "approved"
+        ? "Approved. This tenant has no paid unlock to refund against."
+        : "Rejected. The tenant has been told in the app.";
+  return { ok: true, data: undefined, message };
+}
+
+export async function markRefundPaidAction(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+
+  const parsed = refundPaidSchema.safeParse({
+    refundId: formData.get("refundId"),
+    reference: formData.get("reference") ?? "",
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid reference." };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("admin_mark_refund_paid", {
+    p_refund_id: parsed.data.refundId,
+    p_reference: parsed.data.reference || null,
+  });
+  if (error) return { ok: false, error: "Only an approved refund can be marked paid." };
+
+  revalidatePath("/admin/refunds");
+  return { ok: true, data: undefined, message: "Marked paid. The tenant has been told in the app." };
 }

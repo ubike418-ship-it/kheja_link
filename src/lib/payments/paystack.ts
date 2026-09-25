@@ -10,8 +10,8 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
  * so, either through the signed webhook or through a server-side verify.
  *
  * Reference prefixes tell the two products apart:
- *   kh_…  the house hunting fee
- *   kl_…  a KSh 150 contact unlock
+ *   kl_…  a contact unlock for one listing (contact_unlock_fee, KES 500)
+ *   kh_…  the retired house hunting pass — only checkouts already open
  */
 
 const PAYSTACK = "https://api.paystack.co";
@@ -249,6 +249,7 @@ export async function verifyAndConfirm(reference: string): Promise<{
       const { error } = await admin.rpc("confirm_contact_unlock", {
         p_reference: reference,
         p_provider: "paystack",
+        p_amount_received: paid,
       });
       if (error) return { status: "pending", message: "Confirming your payment…" };
     }

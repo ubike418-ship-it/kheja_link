@@ -36,7 +36,7 @@ export const metadata: Metadata = {
     siteName: "Kheja_Link",
     title: "Kheja_Link | Find Your Next Home in Meru",
     description:
-      "Discover, search and filter long-term rentals across Meru — then talk to the landlord directly.",
+      "Discover, search and filter long-term rentals across Meru — then unlock the landlord's contact and call them directly.",
     url: siteUrl,
   },
   twitter: {

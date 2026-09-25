@@ -68,9 +68,9 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
         `apartments, bedsitters, single rooms, family homes and shops — not short stays.\n\n` +
         `Right now there ${stats.total === 1 ? "is" : "are"} ${stats.total} ` +
         `${stats.total === 1 ? "home" : "homes"} listed across ${stats.locations.length} areas of Meru.\n\n` +
-        `You can search and filter for free without an account, see photos and full details, and contact ` +
-        `the landlord directly — we never sit in the middle of the deal. If you have a house to rent out, ` +
-        `you can list it yourself.`,
+        `You can search and filter for free without an account and see photos and full details. To get ` +
+        `the landlord's and caretaker's numbers and the exact location, unlock the listing in the app. ` +
+        `If you have a house to rent out, you can list it yourself.`,
       href: "/properties",
       hrefLabel: "Browse all homes",
       suggestions: ["What areas do you cover?", "Is it free?", "How do I list my house?"],
@@ -185,12 +185,15 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
     ],
     answer: () => ({
       message:
-        `Yes — Kheja_Link is free.\n\n` +
-        `For house hunters: searching, filtering, saving homes and messaging landlords all cost nothing, ` +
-        `and you don't even need an account to browse or send an inquiry.\n\n` +
-        `For landlords: listing a property is free too.\n\n` +
-        `We don't take a commission on rent, and we never handle your money — rent and deposits go ` +
-        `directly between you and the landlord.`,
+        `Browsing is free.\n\n` +
+        `For house hunters: searching, filtering, saving homes and messaging the Kheja_Link team cost ` +
+        `nothing. When you find a home you want, tap "Unlock contact" on it in the app to get the ` +
+        `landlord's and caretaker's numbers and the exact location. You see the amount and approve ` +
+        `it by M-Pesa right then — once per listing.\n\n` +
+        `For landlords: listing a property is free.\n\n` +
+        `We don't take a commission on rent — rent and deposits go directly between you and the landlord.`,
+      href: "/help",
+      hrefLabel: "How pricing works",
       suggestions: ["How do I list my house?", "Is it safe?", "Do I need an account?"],
     }),
   },
@@ -206,11 +209,11 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
     answer: () => ({
       message:
         `No account needed to browse.\n\n` +
-        `You can search, filter, view full listings with photos, and even send a landlord a message ` +
+        `You can search, filter, view full listings with photos, and even message the Kheja_Link team ` +
         `as a guest.\n\n` +
         `An account only unlocks three things:\n` +
         `• Saving homes to a shortlist that follows you between the website and the app\n` +
-        `• Keeping track of messages you've sent\n` +
+        `• Getting our replies to your messages in your in-app Inbox\n` +
         `• Listing your own property, if you're a landlord\n\n` +
         `Signing up takes about a minute and is free.`,
       href: "/signup",
@@ -319,13 +322,11 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
     ],
     answer: () => ({
       message:
-        `Open any listing and you'll find three ways to reach the landlord directly:\n\n` +
-        `• **Call** — dials their number\n` +
-        `• **WhatsApp** — opens a chat with the listing already referenced\n` +
-        `• **Send a message** — a short form; no account required, just leave an email or phone number ` +
-        `so they can reply\n\n` +
-        `Your message goes straight to the person who posted the house. Kheja_Link doesn't act as an ` +
-        `agent or take a cut.\n\n` +
+        `Tap "Unlock contact" on the listing in the Kheja_Link app. You get the landlord's and ` +
+        `caretaker's numbers and the exact location, and they stay yours — you never pay twice for the ` +
+        `same house.\n\n` +
+        `Not ready to unlock? Use **Message Kheja_Link** on the listing. Messages come to our team, not ` +
+        `the landlord, and our reply lands in your in-app Inbox.\n\n` +
         `When you arrange a viewing, go during daylight and never pay anything before seeing the place.`,
       href: "/properties",
       hrefLabel: "Find a home",
@@ -536,8 +537,8 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
         `• **Email** — hello@khejalink.name.ng\n` +
         `• **Phone** — +254 710 655 709\n` +
         `• **Office** — Greenwood Mall, Meru Town, Kenya\n\n` +
-        `For anything about a specific house, though, contacting the landlord directly from the listing ` +
-        `is much faster.`,
+        `For a question about a specific house, use **Message Kheja_Link** on the listing — our reply ` +
+        `lands in your in-app Inbox.`,
       href: "/help#contact",
       hrefLabel: "Help centre",
       suggestions: ["Is it safe?", "How do I list my house?"],
@@ -559,7 +560,7 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
         `• Your **email is never shown publicly**. A phone number only appears if you deliberately add ` +
         `one to a listing.\n` +
         `• **Saved homes are private to you** — landlords can't see them.\n` +
-        `• An **inquiry is readable only by the landlord it was sent to, and by you**.\n` +
+        `• A **message about a listing is readable only by the Kheja_Link team, and by you**.\n` +
         `• We don't sell your data or run advertising trackers.\n\n` +
         `To delete your account and everything attached to it, email hello@khejalink.name.ng.`,
       href: "/privacy",

@@ -16,7 +16,6 @@ import '../widgets/kheja_sheet.dart';
 import '../widgets/video_player_view.dart';
 import 'auth_screen.dart';
 import 'availability_sheet.dart';
-import 'hunting_screen.dart';
 import 'inquiry_sheet.dart';
 import 'request_sheet.dart';
 
@@ -347,12 +346,6 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                     contact: _contact,
                     onUnlocked: _refreshContact,
                     onRequireSignIn: _requireSignIn,
-                    onHuntingFee: () async {
-                      await Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const HuntingScreen()),
-                      );
-                      await _refreshContact();
-                    },
                   ),
 
                   const SizedBox(height: 12),
@@ -360,8 +353,8 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                     width: double.infinity,
                     child: OutlinedButton.icon(
                       onPressed: () => _openInquiry(property),
-                      icon: const Icon(Icons.mail_outline_rounded, size: 20),
-                      label: const Text('Send a free message'),
+                      icon: const Icon(Icons.support_agent_rounded, size: 20),
+                      label: const Text('Message Kheja_Link'),
                     ),
                   ),
 
@@ -430,7 +423,12 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
       builder: (_) => InquirySheet(property: property),
     );
     if (sent == true && mounted) {
-      showKhejaSnack(context, 'Message sent. The landlord will get back to you.');
+      showKhejaSnack(
+        context,
+        khejaApi.isSignedIn
+            ? 'Message sent. Our reply will appear in your Inbox.'
+            : 'Message sent. Kheja_Link will call you back.',
+      );
     }
   }
 }

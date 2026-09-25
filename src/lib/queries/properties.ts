@@ -9,8 +9,8 @@ import type {
 
 /** Columns a property card needs, joined in one round-trip. */
 // Explicit, because contact_phone, contact_whatsapp, latitude and longitude are
-// revoked from the API roles — they sit behind the KSh 150 unlock and come back
-// only through get_property_contact(). `select=*` would be denied outright.
+// revoked from the API roles — they sit behind the paid contact unlock and come
+// back only through get_property_contact(). `select=*` would be denied outright.
 const PROPERTY_COLUMNS = "id, owner_id, title, slug, description, property_type_id, location_id, address_line, price_amount, price_currency, price_period, deposit_months, bedrooms, bathrooms, size_sqft, is_premium, is_furnished, status, available_from, view_count, published_at, created_at, updated_at, like_count, house_rules, availability, notice_date";
 
 const LIST_SELECT = `
@@ -260,7 +260,7 @@ export async function getMyPropertyById(
   const [normalised] = normaliseImages([raw]);
 
   // The contact columns are revoked from the API roles (they sit behind the
-  // KSh 150 unlock), so they never arrive on the row above. Without this, the
+  // paid contact unlock), so they never arrive on the row above. Without this, the
   // edit form opened with a blank phone number — and saving it silently wiped
   // the landlord's real number. The owner reads them back through a function
   // that checks ownership.
@@ -289,6 +289,7 @@ export async function getLandlordStats(ownerId: string) {
     supabase
       .from("inquiries")
       .select("id", { count: "exact", head: true })
+      .eq("recipient", "landlord")
       .eq("status", "new"),
   ]);
 

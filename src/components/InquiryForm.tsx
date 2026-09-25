@@ -45,7 +45,8 @@ export default function InquiryForm({
         <div className="space-y-1">
           <h3 className="text-xl font-black text-zinc-900 dark:text-white">Message sent</h3>
           <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">
-            The landlord has your details and will reply shortly.
+            Kheja_Link has your message. Signed in? Our reply lands in your Inbox in the app —
+            otherwise we will call you.
           </p>
         </div>
       </div>
@@ -62,10 +63,11 @@ export default function InquiryForm({
 
       <div className="space-y-1">
         <h3 className="text-xl font-black text-zinc-900 dark:text-white tracking-tight">
-          Ask about this home
+          Message Kheja_Link
         </h3>
         <p className="text-sm font-medium text-zinc-500">
-          No account needed — just leave a way to reach you.
+          Questions about this home come to our team, not the landlord. Sign in to get our reply
+          in your in-app Inbox.
         </p>
       </div>
 
@@ -124,7 +126,7 @@ function SubmitButton() {
       className="w-full h-16 bg-blue-600 text-white rounded-2xl font-black text-lg flex items-center justify-center gap-2 hover:bg-blue-700 active:scale-[0.98] transition-all shadow-lg shadow-blue-600/20 disabled:opacity-70"
     >
       {pending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
-      {pending ? "Sending…" : "Send message"}
+      {pending ? "Sending…" : "Send to Kheja_Link"}
     </button>
   );
 }

@@ -50,34 +50,87 @@ void main() {
   group('business settings', () {
     test('defaults are the launch policy', () {
       const s = BusinessSettings();
-      expect(s.huntingFee, 500);
+      expect(s.contactUnlockFee, 500);
+      expect(s.unlockFeeLabel, 'KSh 500');
+      expect(s.houseRefundAmount, 200);
+      expect(s.refundLabel, 'KSh 200');
+      expect(s.refundsEnabled, isTrue);
       expect(s.listingIsFree, isTrue);
       expect(s.listingOfferEndsOn, isNull);
-      expect(s.huntingFeeLabel, 'KSh 500');
     });
 
     test('settings from the database override the defaults', () {
       final s = BusinessSettings.fromMap({
-        'hunting_fee': '750',
+        'contact_unlock_fee': '750',
+        'house_refund_amount': '300',
         'landlord_listing_fee': '200',
-        'hunting_fee_unlocks_contacts': 'false',
         'landlord_listing_fee_offer_ends_on': '2026-12-31',
       });
-      expect(s.huntingFee, 750);
+      expect(s.contactUnlockFee, 750);
+      expect(s.houseRefundAmount, 300);
       expect(s.listingIsFree, isFalse);
-      expect(s.huntingUnlocksContacts, isFalse);
       expect(s.listingOfferEndsOn, DateTime(2026, 12, 31));
     });
 
+    test('a zero refund switches refunds off', () {
+      final s = BusinessSettings.fromMap({'house_refund_amount': '0'});
+      expect(s.refundsEnabled, isFalse);
+    });
+
     test('blank or junk values fall back safely', () {
-      final s = BusinessSettings.fromMap({'hunting_fee': 'abc', 'landlord_listing_fee_offer_ends_on': ''});
-      expect(s.huntingFee, 500);
+      final s = BusinessSettings.fromMap({'contact_unlock_fee': 'abc', 'landlord_listing_fee_offer_ends_on': ''});
+      expect(s.contactUnlockFee, 500);
       expect(s.listingOfferEndsOn, isNull);
     });
 
     test('the cache round-trips', () {
-      final s = BusinessSettings.fromMap({'hunting_fee': '600'});
-      expect(BusinessSettings.fromMap(s.toCache()).huntingFee, 600);
+      final s = BusinessSettings.fromMap({'contact_unlock_fee': '600', 'house_refund_amount': '250'});
+      final back = BusinessSettings.fromMap(s.toCache());
+      expect(back.contactUnlockFee, 600);
+      expect(back.houseRefundAmount, 250);
+    });
+  });
+
+  group('unlocks and refunds', () {
+    test('a checkout carries the price the database set', () {
+      final c = UnlockCheckout.fromMap({
+        'reference': 'kl_abc123def456',
+        'amount': 500,
+        'currency': 'KES',
+        'already_unlocked': false,
+      });
+      expect(c.reference, 'kl_abc123def456');
+      expect(c.amountLabel, 'KSh 500');
+      expect(c.alreadyUnlocked, isFalse);
+    });
+
+    test('an already unlocked listing has nothing to pay', () {
+      final c = UnlockCheckout.fromMap({'reference': null, 'amount': 500, 'already_unlocked': true});
+      expect(c.alreadyUnlocked, isTrue);
+      expect(c.reference, isNull);
+    });
+
+    test('a submitted house reads its refund, as an object or a list', () {
+      final base = {
+        'id': 'h1',
+        'status': 'approved',
+        'created_at': '2026-09-25T10:00:00Z',
+        'area': 'Near Kinoru stadium',
+        'bedrooms': 1,
+        'location': {'name': 'Kinoru'},
+        'property_type': {'name': 'Apartment'},
+      };
+      const refund = {'id': 'r1', 'amount': 200, 'currency': 'KES', 'status': 'approved'};
+
+      final one = HouseSubmission.fromMap({...base, 'refund': refund});
+      final list = HouseSubmission.fromMap({...base, 'refund': [refund]});
+      final none = HouseSubmission.fromMap({...base, 'refund': null});
+
+      expect(one.title, '1-bedroom Apartment in Near Kinoru stadium, Kinoru');
+      expect(one.refund?.amountLabel, 'KSh 200');
+      expect(one.refund?.statusLabel, 'Refund approved — on its way');
+      expect(list.refund?.id, 'r1');
+      expect(none.refund, isNull);
     });
   });
 
