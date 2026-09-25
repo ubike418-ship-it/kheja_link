@@ -1,25 +1,59 @@
+import { PieChart } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import SettingRow from "@/components/admin/SettingRow";
 import FeeAllocationForm from "@/components/admin/FeeAllocationForm";
 import PaymentsHealth from "@/components/admin/PaymentsHealth";
+import DeleteButton from "@/components/admin/DeleteButton";
+import { Badge, EmptyState, ErrorState, PageHeader, Panel } from "@/components/admin/AdminUI";
+import { deleteFeeAllocationAction } from "@/lib/actions/admin";
 import type { AppSettingRow, FeeAllocationRow } from "@/lib/supabase/database.types";
 
 export const metadata = { title: "Business settings — Admin" };
 
-/** Shown here in this order; anything else in app_settings is internal. */
-const EDITABLE = [
-  "contact_unlock_fee",
-  "house_refund_amount",
-  "contact_unlock_currency",
-  "landlord_listing_fee",
-  "landlord_listing_fee_offer_label",
-  "landlord_listing_fee_offer_ends_on",
-  "stays_enabled",
-  "service_provider_registration_enabled",
-  "service_provider_onboarding_fee",
-  "tenant_notifications_enabled",
-  "management_name",
-  "management_phone",
+/**
+ * Shown here, grouped and in this order, with plain names. Anything else in
+ * app_settings is internal (markers, the maintenance stamp, the retired
+ * House Hunting pass).
+ */
+const GROUPS: { title: string; description: string; keys: [key: string, label: string][] }[] = [
+  {
+    title: "Pricing",
+    description:
+      "What unlocking a listing costs, how long it stays open, and the refund for giving us a house. The refund must stay below the unlock price.",
+    keys: [
+      ["contact_unlock_fee", "Unlock price"],
+      ["contact_unlock_hours", "Unlock lasts (hours)"],
+      ["house_refund_amount", "House refund"],
+      ["contact_unlock_currency", "Currency"],
+    ],
+  },
+  {
+    title: "Listings",
+    description: "What landlords pay to list, and the free-listing offer shown to them.",
+    keys: [
+      ["landlord_listing_fee", "Listing fee"],
+      ["landlord_listing_fee_offer_label", "Offer wording"],
+      ["landlord_listing_fee_offer_ends_on", "Offer ends on"],
+    ],
+  },
+  {
+    title: "Features",
+    description: "Switch parts of the apps on or off without a new release.",
+    keys: [
+      ["tenant_notifications_enabled", "Vacancy and match alerts"],
+      ["stays_enabled", "Short-term Stays"],
+      ["service_provider_registration_enabled", "Provider self-registration"],
+      ["service_provider_onboarding_fee", "Provider onboarding fee"],
+    ],
+  },
+  {
+    title: "Support line",
+    description: "Kheja_Link's own number, released to tenants with an unlocked listing's contacts.",
+    keys: [
+      ["management_name", "Name shown"],
+      ["management_phone", "Phone number"],
+    ],
+  },
 ];
 
 export default async function SettingsPage() {
@@ -30,78 +64,76 @@ export default async function SettingsPage() {
   ]);
 
   const byKey = new Map(((settings ?? []) as AppSettingRow[]).map((s) => [s.key, s]));
-  const rows = EDITABLE.map((key) => byKey.get(key)).filter((s): s is AppSettingRow => !!s);
   const shares = (allocations ?? []) as FeeAllocationRow[];
   const lastRun = byKey.get("last_maintenance_at")?.value;
 
   const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.khejalink.name.ng").replace(/\/$/, "");
 
   return (
-    <div className="space-y-12">
+    <>
+      <PageHeader
+        title="Business settings"
+        description="Prices and switches both apps read at runtime — change them here instead of in code. An unlock is always charged at the price set here when the tenant taps “Unlock contact”."
+        meta={lastRun ? `Last daily maintenance: ${new Date(lastRun).toLocaleString("en-KE", { timeZone: "Africa/Nairobi" })}` : undefined}
+      />
+
       <PaymentsHealth siteUrl={siteUrl} />
 
-      <section className="space-y-6">
-        <div className="space-y-2 max-w-2xl">
-          <h2 className="text-3xl font-black text-zinc-900 dark:text-white tracking-tighter">Business settings</h2>
-          <p className="text-zinc-500 font-medium">
-            Prices and switches both apps read at runtime — change them here instead of in code. An
-            unlock is always charged at the price set here when the tenant taps &ldquo;Unlock
-            contact&rdquo;, and the house refund must stay below it.
-          </p>
-          {lastRun && (
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">
-              Last daily maintenance: {new Date(lastRun).toLocaleString("en-KE")}
-            </p>
-          )}
-        </div>
+      {error ? (
+        <ErrorState text="Could not load settings. Refresh to try again." />
+      ) : byKey.size === 0 ? (
+        <ErrorState text="No settings found. Run supabase/migrations/0012 to 0016 first." />
+      ) : (
+        GROUPS.map((group) => {
+          const rows = group.keys
+            .map(([key, label]) => ({ setting: byKey.get(key), label }))
+            .filter((r): r is { setting: AppSettingRow; label: string } => !!r.setting);
+          if (rows.length === 0) return null;
+          return (
+            <Panel key={group.title} title={group.title} description={group.description} flush>
+              {rows.map((r) => (
+                <SettingRow key={r.setting.key} setting={r.setting} label={r.label} />
+              ))}
+            </Panel>
+          );
+        })
+      )}
 
-        {error ? (
-          <p className="p-6 rounded-[2rem] bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 font-bold">
-            Could not load settings. Refresh to try again.
-          </p>
-        ) : rows.length === 0 ? (
-          <p className="p-6 rounded-[2rem] bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 font-bold">
-            No settings found. Run supabase/migrations/0012 to 0015 first.
-          </p>
+      <Panel
+        title="How fees are split"
+        description="Each confirmed payment records the split in force at that moment, so changing a share only affects future payments. Whatever the active shares do not cover goes to the platform."
+        flush
+      >
+        {shares.length === 0 ? (
+          <EmptyState icon={PieChart} title="No shares yet" text="Everything goes to the platform until you add a share." />
         ) : (
-          <div className="space-y-3">
-            {rows.map((s) => (
-              <SettingRow key={s.key} setting={s} />
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="space-y-6">
-        <div className="space-y-2 max-w-2xl">
-          <h2 className="text-3xl font-black text-zinc-900 dark:text-white tracking-tighter">How fees are split</h2>
-          <p className="text-zinc-500 font-medium">
-            Each confirmed payment records the split in force at that moment, so changing a share
-            only affects future payments. Whatever the active shares do not cover goes to the platform.
-          </p>
-        </div>
-
-        <div className="grid gap-3">
-          {shares.map((a) => (
+          shares.map((a) => (
             <div
               key={a.id}
-              className="p-5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[2rem] flex flex-wrap items-center justify-between gap-3"
+              className="px-6 py-4 border-t border-zinc-100 dark:border-zinc-800 first:border-t-0 flex flex-wrap items-center gap-4"
             >
-              <div>
+              <div className="flex-1 min-w-0">
                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">
                   {a.product.replace(/_/g, " ")}
                 </p>
-                <p className="text-lg font-black text-zinc-900 dark:text-white">{a.party.replace(/_/g, " ")}</p>
+                <p className="text-lg font-black text-zinc-900 dark:text-white capitalize">{a.party.replace(/_/g, " ")}</p>
               </div>
+              {!a.is_active && <Badge>Inactive</Badge>}
               <p className={`text-2xl font-black tracking-tighter ${a.is_active ? "text-blue-600" : "text-zinc-400 line-through"}`}>
                 {Number(a.share_percent)}%
               </p>
+              <DeleteButton
+                action={deleteFeeAllocationAction.bind(null, a.id)}
+                itemName={`the ${a.party.replace(/_/g, " ")} share`}
+                consequence="Future payments no longer give this party a share; payments already made keep the split they were recorded with."
+              />
             </div>
-          ))}
+          ))
+        )}
+        <div className="p-6 border-t border-zinc-100 dark:border-zinc-800">
+          <FeeAllocationForm />
         </div>
-
-        <FeeAllocationForm />
-      </section>
-    </div>
+      </Panel>
+    </>
   );
 }

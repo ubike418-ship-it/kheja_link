@@ -2,7 +2,21 @@ import Link from "next/link";
 import { Home, ExternalLink } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { ActionSelect, ActionToggle } from "@/components/admin/AdminInlineForms";
-import { setListingPremiumAction, setListingStatusAction } from "@/lib/actions/admin";
+import DeleteButton from "@/components/admin/DeleteButton";
+import {
+  Badge,
+  EmptyState,
+  ErrorState,
+  PageHeader,
+  Panel,
+  Row,
+  Toolbar,
+  toolbarButton,
+  toolbarInput,
+  toolbarSelect,
+  type Tone,
+} from "@/components/admin/AdminUI";
+import { deleteListingAction, setListingPremiumAction, setListingStatusAction } from "@/lib/actions/admin";
 import { formatRelativeDate, formatRent } from "@/lib/format";
 import type { PricePeriod, PropertyStatus } from "@/lib/supabase/database.types";
 
@@ -55,28 +69,25 @@ export default async function AdminListingsPage({ searchParams }: { searchParams
   const { data, error } = await query;
   const rows = (data ?? []) as unknown as Listing[];
 
-  return (
-    <div className="space-y-8">
-      <div className="space-y-2 max-w-2xl">
-        <h2 className="text-3xl font-black text-zinc-900 dark:text-white tracking-tighter">Listings</h2>
-        <p className="text-zinc-500 font-medium">
-          Every listing on Kheja_Link. Archive anything misleading or fraudulent to take it off the
-          site at once; landlords still edit their own details.
-        </p>
-      </div>
+  const STATUS_TONE: Record<string, Tone> = {
+    published: "green",
+    draft: "amber",
+    rented: "blue",
+    archived: "zinc",
+    pending: "amber",
+  };
 
-      <form className="flex flex-col sm:flex-row gap-3">
-        <input
-          name="q"
-          defaultValue={q}
-          placeholder="Search by title"
-          className="h-12 px-5 flex-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm font-medium outline-none focus:border-blue-500"
-        />
-        <select
-          name="status"
-          defaultValue={status}
-          className="h-12 px-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm font-bold outline-none"
-        >
+  return (
+    <>
+      <PageHeader
+        title="Listings"
+        description="Every listing on Kheja_Link, drafts included. Archive anything misleading to take it off the site at once, mark premium homes, or delete a listing for good. Landlords still edit their own details."
+        meta={`${rows.length} shown`}
+      />
+
+      <Toolbar>
+        <input name="q" defaultValue={q} placeholder="Search by title" className={toolbarInput} />
+        <select name="status" defaultValue={status} className={toolbarSelect}>
           <option value="">Every status</option>
           {STATUS_OPTIONS.map((s) => (
             <option key={s.value} value={s.value}>
@@ -84,66 +95,66 @@ export default async function AdminListingsPage({ searchParams }: { searchParams
             </option>
           ))}
         </select>
-        <button className="h-12 px-6 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-2xl text-sm font-black">
-          Filter
-        </button>
-      </form>
+        <button className={toolbarButton}>Filter</button>
+      </Toolbar>
 
       {error ? (
-        <p className="p-6 rounded-[2rem] bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 font-bold">
-          Could not load listings. Refresh to try again.
-        </p>
-      ) : rows.length === 0 ? (
-        <div className="py-20 text-center space-y-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[3rem]">
-          <Home className="w-12 h-12 text-zinc-300 mx-auto" />
-          <p className="text-xl font-black text-zinc-900 dark:text-white">No listings match</p>
-        </div>
+        <ErrorState text="Could not load listings. Refresh to try again." />
       ) : (
-        <div className="space-y-3">
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">{rows.length} listings</p>
-          {rows.map((p) => (
-            <article
-              key={p.id}
-              className="p-5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[2rem] flex flex-col lg:flex-row lg:items-center gap-4"
-            >
-              <div className="min-w-0 flex-1 space-y-1">
-                <Link
-                  href={`/properties/${p.slug}`}
-                  className="flex items-center gap-1.5 font-black text-zinc-900 dark:text-white hover:text-blue-600"
-                >
-                  <span className="truncate">{p.title}</span>
-                  <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-                </Link>
-                <p className="text-xs font-bold text-zinc-500">
-                  {formatRent(p.price_amount, p.price_period, p.price_currency)} · {p.location?.name ?? "Meru"} ·{" "}
-                  {p.owner?.full_name ?? "Landlord"}
-                </p>
-                <p className="text-[10px] font-black uppercase tracking-[0.15em] text-zinc-400">
-                  Added {formatRelativeDate(p.created_at)} · {p.availability.replace("_", " ")} · {p.view_count} views ·{" "}
-                  {p.like_count} likes
-                </p>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <ActionSelect
-                  label={`Status of ${p.title}`}
-                  value={p.status}
-                  options={
-                    STATUS_OPTIONS.some((s) => s.value === p.status)
-                      ? STATUS_OPTIONS
-                      : [{ value: p.status, label: p.status }, ...STATUS_OPTIONS]
-                  }
-                  action={setListingStatusAction.bind(null, p.id)}
-                />
-                <ActionToggle
-                  on={p.is_premium}
-                  action={setListingPremiumAction.bind(null, p.id)}
-                  labels={["Premium", "Standard"]}
-                />
-              </div>
-            </article>
-          ))}
-        </div>
+        <Panel title={`${rows.length} ${rows.length === 1 ? "listing" : "listings"}`} flush>
+          {rows.length === 0 ? (
+            <EmptyState icon={Home} title="No listings match" text="Try another title or status." />
+          ) : (
+            rows.map((p) => (
+              <Row key={p.id}>
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Link
+                      href={`/properties/${p.slug}`}
+                      className="flex items-center gap-1.5 font-black text-zinc-900 dark:text-white hover:text-blue-600 min-w-0"
+                    >
+                      <span className="truncate">{p.title}</span>
+                      <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                    </Link>
+                    <Badge tone={STATUS_TONE[p.status] ?? "zinc"}>{p.status}</Badge>
+                    {p.is_premium && <Badge tone="purple">Premium</Badge>}
+                  </div>
+                  <p className="text-xs font-bold text-zinc-500">
+                    {formatRent(p.price_amount, p.price_period, p.price_currency)} · {p.location?.name ?? "Meru"} ·{" "}
+                    {p.owner?.full_name ?? "Landlord"}
+                  </p>
+                  <p className="text-[10px] font-black uppercase tracking-[0.15em] text-zinc-400">
+                    Added {formatRelativeDate(p.created_at)} · {p.availability.replace("_", " ")} · {p.view_count} views ·{" "}
+                    {p.like_count} likes
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <ActionSelect
+                    label={`Status of ${p.title}`}
+                    value={p.status}
+                    options={
+                      STATUS_OPTIONS.some((s) => s.value === p.status)
+                        ? STATUS_OPTIONS
+                        : [{ value: p.status, label: p.status }, ...STATUS_OPTIONS]
+                    }
+                    action={setListingStatusAction.bind(null, p.id)}
+                  />
+                  <ActionToggle
+                    on={p.is_premium}
+                    action={setListingPremiumAction.bind(null, p.id)}
+                    labels={["Premium", "Standard"]}
+                  />
+                  <DeleteButton
+                    action={deleteListingAction.bind(null, p.id)}
+                    itemName={`"${p.title}"`}
+                    consequence="The listing, its photos list, saved-home entries, requests, messages and unlock records all go. Archiving hides it without deleting."
+                  />
+                </div>
+              </Row>
+            ))
+          )}
+        </Panel>
       )}
-    </div>
+    </>
   );
 }

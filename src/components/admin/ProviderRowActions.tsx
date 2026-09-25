@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check, X, Power, Pencil, Trash2, Loader2 } from "lucide-react";
+import { Check, X, Power, Pencil, Loader2 } from "lucide-react";
+import DeleteButton from "@/components/admin/DeleteButton";
 import { toast } from "sonner";
 import { deleteProviderAction, setProviderStatusAction } from "@/lib/actions/admin";
 import type { ApprovalStatus } from "@/lib/supabase/database.types";
@@ -81,17 +82,11 @@ export default function ProviderRowActions({
       >
         <Pencil className="w-4 h-4" /> Edit
       </Link>
-      <button
-        type="button"
-        disabled={pending}
-        aria-label={`Delete ${name}`}
-        onClick={() => {
-          if (window.confirm(`Delete ${name}? This cannot be undone.`)) run(() => deleteProviderAction(id));
-        }}
-        className={`${button} px-3 text-zinc-400 hover:text-red-600`}
-      >
-        <Trash2 className="w-4 h-4" />
-      </button>
+      <DeleteButton
+        action={() => deleteProviderAction(id)}
+        itemName={name}
+        consequence="They disappear from the app and the back office, logo included."
+      />
     </div>
   );
 }

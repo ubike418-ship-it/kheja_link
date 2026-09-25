@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Plus, Truck, Wifi, Sparkles, Phone, Mail, MapPin } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import ProviderRowActions from "@/components/admin/ProviderRowActions";
+import { EmptyState, ErrorState, PageHeader, Panel } from "@/components/admin/AdminUI";
 import type { PartnerRow } from "@/lib/supabase/database.types";
 
 export const metadata = { title: "Service providers — Admin" };
@@ -39,46 +40,46 @@ export default async function ProvidersPage() {
 
   const providers = (data ?? []) as PartnerRow[];
 
+  const live = providers.filter((p) => p.is_active && p.approval_status === "approved").length;
+
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-        <div className="space-y-2 max-w-2xl">
-          <h2 className="text-3xl font-black text-zinc-900 dark:text-white tracking-tighter">
-            Service providers
-          </h2>
-          <p className="text-zinc-500 font-medium">
-            Movers, internet and cleaning companies are onboarded by the Kheja_Link team — there is
-            no public sign-up. Only providers that are <strong>approved</strong> and{" "}
-            <strong>live</strong> appear under listings in the app.
-          </p>
-        </div>
-        <Link
-          href="/admin/providers/new"
-          className="flex items-center justify-center gap-2 px-6 h-14 bg-blue-600 text-white rounded-2xl font-black hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/20 shrink-0"
-        >
-          <Plus className="w-5 h-5" />
-          Add provider
-        </Link>
-      </div>
+    <>
+      <PageHeader
+        title="Service providers"
+        description={
+          <>
+            Movers, internet and cleaning companies are onboarded by the Kheja_Link team — there is no
+            public sign-up. Only providers that are <strong>approved</strong> and <strong>live</strong>{" "}
+            appear under listings in the app.
+          </>
+        }
+        meta={`${providers.length} providers · ${live} live`}
+        actions={
+          <Link
+            href="/admin/providers/new"
+            className="flex items-center justify-center gap-2 px-5 h-11 bg-blue-600 text-white rounded-2xl text-sm font-black hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/20"
+          >
+            <Plus className="w-4 h-4" />
+            Add provider
+          </Link>
+        }
+      />
 
       {error ? (
-        <p className="p-6 rounded-[2rem] bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 font-bold">
-          Could not load providers. Refresh to try again.
-        </p>
+        <ErrorState text="Could not load providers. Refresh to try again." />
       ) : providers.length === 0 ? (
-        <div className="py-20 text-center space-y-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[3rem]">
-          <Truck className="w-12 h-12 text-zinc-300 mx-auto" />
-          <p className="text-xl font-black text-zinc-900 dark:text-white">No providers yet</p>
-          <p className="text-zinc-500 font-medium">Add the first company you have an agreement with.</p>
-        </div>
+        <Panel>
+          <EmptyState icon={Truck} title="No providers yet" text="Add the first company you have an agreement with." />
+        </Panel>
       ) : (
-        <div className="space-y-4">
+        <Panel title={`${providers.length} ${providers.length === 1 ? "provider" : "providers"}`} flush>
+        <div>
           {providers.map((p) => {
             const Category = CATEGORY[p.category] ?? CATEGORY.movers;
             return (
               <div
                 key={p.id}
-                className="p-5 sm:p-6 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[2rem] flex flex-col lg:flex-row lg:items-center gap-5"
+                className="px-6 py-5 border-t border-zinc-100 dark:border-zinc-800 first:border-t-0 flex flex-col lg:flex-row lg:items-center gap-5"
               >
                 <div className="flex items-start gap-4 min-w-0 flex-1">
                   <div
@@ -134,7 +135,8 @@ export default async function ProvidersPage() {
             );
           })}
         </div>
+        </Panel>
       )}
-    </div>
+    </>
   );
 }

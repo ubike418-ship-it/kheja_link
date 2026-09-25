@@ -262,6 +262,9 @@ export async function saveSettingAction(key: string, value: string): Promise<Act
   if (key === "landlord_listing_fee_offer_ends_on" && v !== "" && !/^\d{4}-\d{2}-\d{2}$/.test(v)) {
     return { ok: false, error: "Use a date like 2026-12-31, or leave it blank." };
   }
+  if (key === "contact_unlock_hours" && !(/^\d+$/.test(v) && Number(v) >= 1 && Number(v) <= 720)) {
+    return { ok: false, error: "Enter a whole number of hours between 1 and 720." };
+  }
   if (key === "contact_unlock_currency" && !/^[A-Z]{3}$/.test(v)) {
     return { ok: false, error: "Use a three-letter currency code, e.g. KES." };
   }
@@ -557,4 +560,87 @@ export async function setListingPremiumAction(propertyId: string, premium: boole
 
   revalidatePath("/admin/listings");
   return { ok: true, data: undefined, message: premium ? "Marked premium." : "Premium removed." };
+}
+
+// -----------------------------------------------------------------------------
+// Deleting — the dustbin on every back-office page. Row Level Security (0017)
+// is what actually allows or refuses each delete.
+// -----------------------------------------------------------------------------
+
+type DeletableTable =
+  | "properties"
+  | "contact_unlocks"
+  | "payment_attempts"
+  | "inquiries"
+  | "house_submissions"
+  | "stays_waitlist"
+  | "fee_allocations";
+
+async function deleteRow(
+  table: DeletableTable,
+  id: string,
+  paths: string[],
+  message: string,
+): Promise<ActionResult> {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.from(table).delete().eq("id", id).select("id");
+  if (error || !data?.length) return { ok: false, error: "Could not delete that. Refresh and try again." };
+
+  for (const path of paths) revalidatePath(path);
+  revalidatePath("/admin");
+  return { ok: true, data: undefined, message };
+}
+
+export async function deleteUserAction(userId: string): Promise<ActionResult> {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("admin_delete_user", { p_user_id: userId });
+  if (error) {
+    return {
+      ok: false,
+      error: /own account/.test(error.message)
+        ? "You cannot delete your own account."
+        : "Could not delete that account.",
+    };
+  }
+  if (!data) return { ok: false, error: "That account no longer exists." };
+
+  revalidatePath("/admin/users");
+  revalidatePath("/admin");
+  return { ok: true, data: undefined, message: "Account deleted." };
+}
+
+export async function deleteListingAction(propertyId: string): Promise<ActionResult> {
+  const result = await deleteRow("properties", propertyId, ["/admin/listings", "/properties"], "Listing deleted.");
+  if (result.ok) revalidatePath("/");
+  return result;
+}
+
+export async function deleteUnlockAction(unlockId: string) {
+  return deleteRow("contact_unlocks", unlockId, ["/admin/payments"], "Payment record deleted.");
+}
+
+export async function deletePaymentAttemptAction(attemptId: string) {
+  return deleteRow("payment_attempts", attemptId, ["/admin/payments"], "Attempt deleted from the log.");
+}
+
+export async function deleteMessageAction(inquiryId: string) {
+  return deleteRow("inquiries", inquiryId, ["/admin/messages"], "Message deleted.");
+}
+
+export async function deleteHouseSubmissionAction(submissionId: string) {
+  return deleteRow("house_submissions", submissionId, ["/admin/refunds"], "House and its refund deleted.");
+}
+
+export async function deleteWaitlistEntryAction(entryId: string) {
+  return deleteRow("stays_waitlist", entryId, ["/admin/stays"], "Removed from the waitlist.");
+}
+
+export async function deleteFeeAllocationAction(allocationId: string) {
+  return deleteRow("fee_allocations", allocationId, ["/admin/settings"], "Share deleted.");
 }

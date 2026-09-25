@@ -1,7 +1,20 @@
 import { Users, Phone, Mail } from "lucide-react";
 import { createClient, getCurrentProfile } from "@/lib/supabase/server";
 import { ActionSelect, ActionToggle } from "@/components/admin/AdminInlineForms";
-import { setUserRoleAction, setUserVerifiedAction } from "@/lib/actions/admin";
+import DeleteButton from "@/components/admin/DeleteButton";
+import {
+  Badge,
+  EmptyState,
+  ErrorState,
+  PageHeader,
+  Panel,
+  Row,
+  Toolbar,
+  toolbarButton,
+  toolbarInput,
+  toolbarSelect,
+} from "@/components/admin/AdminUI";
+import { deleteUserAction, setUserRoleAction, setUserVerifiedAction } from "@/lib/actions/admin";
 import { formatRelativeDate } from "@/lib/format";
 import type { UserRole } from "@/lib/supabase/database.types";
 
@@ -26,6 +39,8 @@ const ROLE_OPTIONS = [
   { value: "admin", label: "Admin" },
 ];
 
+const ROLE_TONE = { seeker: "blue", landlord: "green", admin: "purple" } as const;
+
 type Search = Promise<{ q?: string; role?: string }>;
 
 /** Every account. Emails come from admin_list_users(), which is admin-only. */
@@ -34,36 +49,26 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: S
   const supabase = await createClient();
   const [{ data, error }, me] = await Promise.all([supabase.rpc("admin_list_users"), getCurrentProfile()]);
 
+  const all = (data ?? []) as AdminUser[];
   const term = q.trim().toLowerCase();
-  const rows = ((data ?? []) as AdminUser[]).filter(
+  const rows = all.filter(
     (u) =>
       (!role || u.role === role) &&
-      (!term ||
-        [u.full_name, u.email, u.phone].some((v) => v?.toLowerCase().includes(term))),
+      (!term || [u.full_name, u.email, u.phone].some((v) => v?.toLowerCase().includes(term))),
   );
+  const count = (r: UserRole) => all.filter((u) => u.role === r).length;
 
   return (
-    <div className="space-y-8">
-      <div className="space-y-2 max-w-2xl">
-        <h2 className="text-3xl font-black text-zinc-900 dark:text-white tracking-tighter">Users</h2>
-        <p className="text-zinc-500 font-medium">
-          Every tenant, landlord and admin. Change a role or give a landlord the verified badge. Only
-          make someone an admin if they work for Kheja_Link — admins see every payment and message.
-        </p>
-      </div>
+    <>
+      <PageHeader
+        title="Users"
+        description="Every tenant, landlord and admin. Change a role, give a landlord the verified badge, or delete an account. Only make someone an admin if they work for Kheja_Link."
+        meta={`${all.length} accounts · ${count("seeker")} tenants · ${count("landlord")} landlords · ${count("admin")} admins`}
+      />
 
-      <form className="flex flex-col sm:flex-row gap-3">
-        <input
-          name="q"
-          defaultValue={q}
-          placeholder="Search name, email or phone"
-          className="h-12 px-5 flex-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm font-medium outline-none focus:border-blue-500"
-        />
-        <select
-          name="role"
-          defaultValue={role}
-          className="h-12 px-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm font-bold outline-none"
-        >
+      <Toolbar>
+        <input name="q" defaultValue={q} placeholder="Search name, email or phone" className={toolbarInput} />
+        <select name="role" defaultValue={role} className={toolbarSelect}>
           <option value="">All roles</option>
           {ROLE_OPTIONS.map((r) => (
             <option key={r.value} value={r.value}>
@@ -71,73 +76,81 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: S
             </option>
           ))}
         </select>
-        <button className="h-12 px-6 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-2xl text-sm font-black">
-          Filter
-        </button>
-      </form>
+        <button className={toolbarButton}>Filter</button>
+      </Toolbar>
 
       {error ? (
-        <p className="p-6 rounded-[2rem] bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 font-bold">
-          Could not load accounts. Make sure migration 0016 has been run, then refresh.
-        </p>
-      ) : rows.length === 0 ? (
-        <div className="py-20 text-center space-y-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[3rem]">
-          <Users className="w-12 h-12 text-zinc-300 mx-auto" />
-          <p className="text-xl font-black text-zinc-900 dark:text-white">No accounts match</p>
-        </div>
+        <ErrorState text="Could not load accounts. Make sure migration 0016 has been run, then refresh." />
       ) : (
-        <div className="space-y-3">
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">{rows.length} accounts</p>
-          {rows.map((u) => (
-            <article
-              key={u.id}
-              className="p-5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[2rem] flex flex-col lg:flex-row lg:items-center gap-4"
-            >
-              <div className="min-w-0 flex-1 space-y-1">
-                <p className="font-black text-zinc-900 dark:text-white truncate">
-                  {u.full_name ?? "No name"} {u.id === me?.id && <span className="text-blue-600">(you)</span>}
-                </p>
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-bold text-zinc-500">
-                  {u.email && (
-                    <span className="flex items-center gap-1.5 break-all">
-                      <Mail className="w-3.5 h-3.5" /> {u.email}
+        <Panel title={`${rows.length} ${rows.length === 1 ? "account" : "accounts"}`} flush>
+          {rows.length === 0 ? (
+            <EmptyState icon={Users} title="No accounts match" text="Try another name, email or role." />
+          ) : (
+            rows.map((u) => {
+              const isMe = u.id === me?.id;
+              return (
+                <Row key={u.id}>
+                  <div className="flex items-center gap-4 min-w-0 flex-1">
+                    <span className="w-11 h-11 rounded-2xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-sm font-black text-zinc-600 dark:text-zinc-300 shrink-0">
+                      {(u.full_name ?? u.email ?? "?")[0]?.toUpperCase()}
                     </span>
-                  )}
-                  {u.phone && (
-                    <a href={`tel:${u.phone}`} className="flex items-center gap-1.5 hover:text-blue-600">
-                      <Phone className="w-3.5 h-3.5" /> {u.phone}
-                    </a>
-                  )}
-                </div>
-                <p className="text-[10px] font-black uppercase tracking-[0.15em] text-zinc-400">
-                  Joined {formatRelativeDate(u.created_at)} · last sign-in{" "}
-                  {u.last_sign_in_at ? formatRelativeDate(u.last_sign_in_at) : "never"} · {u.listings} listings ·{" "}
-                  {u.unlocks} unlocks
-                </p>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <ActionSelect
-                  label={`Role of ${u.full_name ?? "this account"}`}
-                  value={u.role}
-                  options={ROLE_OPTIONS}
-                  action={setUserRoleAction.bind(null, u.id)}
-                  confirm={{
-                    value: "admin",
-                    message: `Make ${u.full_name ?? "this account"} an admin? They will see every payment, message and account.`,
-                  }}
-                />
-                {u.role === "landlord" && (
-                  <ActionToggle
-                    on={u.is_verified}
-                    action={setUserVerifiedAction.bind(null, u.id)}
-                    labels={["Verified", "Not verified"]}
-                  />
-                )}
-              </div>
-            </article>
-          ))}
-        </div>
+                    <div className="min-w-0 space-y-1">
+                      <p className="flex items-center gap-2 font-black text-zinc-900 dark:text-white">
+                        <span className="truncate">{u.full_name ?? "No name"}</span>
+                        <Badge tone={ROLE_TONE[u.role]}>{ROLE_OPTIONS.find((r) => r.value === u.role)?.label}</Badge>
+                        {isMe && <Badge tone="blue">You</Badge>}
+                      </p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-bold text-zinc-500">
+                        {u.email && (
+                          <span className="flex items-center gap-1.5 break-all">
+                            <Mail className="w-3.5 h-3.5" /> {u.email}
+                          </span>
+                        )}
+                        {u.phone && (
+                          <a href={`tel:${u.phone}`} className="flex items-center gap-1.5 hover:text-blue-600">
+                            <Phone className="w-3.5 h-3.5" /> {u.phone}
+                          </a>
+                        )}
+                      </div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.15em] text-zinc-400">
+                        Joined {formatRelativeDate(u.created_at)} · last sign-in{" "}
+                        {u.last_sign_in_at ? formatRelativeDate(u.last_sign_in_at) : "never"} · {u.listings} listings ·{" "}
+                        {u.unlocks} unlocks
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <ActionSelect
+                      label={`Role of ${u.full_name ?? "this account"}`}
+                      value={u.role}
+                      options={ROLE_OPTIONS}
+                      action={setUserRoleAction.bind(null, u.id)}
+                      confirm={{
+                        value: "admin",
+                        message: `Make ${u.full_name ?? "this account"} an admin? They will see every payment, message and account.`,
+                      }}
+                    />
+                    {u.role === "landlord" && (
+                      <ActionToggle
+                        on={u.is_verified}
+                        action={setUserVerifiedAction.bind(null, u.id)}
+                        labels={["Verified", "Not verified"]}
+                      />
+                    )}
+                    {!isMe && (
+                      <DeleteButton
+                        action={deleteUserAction.bind(null, u.id)}
+                        itemName={`the account of ${u.full_name ?? u.email ?? "this user"}`}
+                        consequence={`Their sign-in goes, and with it their ${u.listings} listing${u.listings === 1 ? "" : "s"}, unlocks, saved homes, messages and notifications.`}
+                      />
+                    )}
+                  </div>
+                </Row>
+              );
+            })
+          )}
+        </Panel>
       )}
-    </div>
+    </>
   );
 }

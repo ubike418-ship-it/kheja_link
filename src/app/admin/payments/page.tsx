@@ -1,6 +1,9 @@
 import Link from "next/link";
-import { Wallet, AlertTriangle } from "lucide-react";
+import { Wallet, AlertTriangle, ListChecks } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import DeleteButton from "@/components/admin/DeleteButton";
+import { Badge, EmptyState, ErrorState, PageHeader, Panel, type Tone } from "@/components/admin/AdminUI";
+import { deletePaymentAttemptAction, deleteUnlockAction } from "@/lib/actions/admin";
 import { formatPrice, formatRelativeDate } from "@/lib/format";
 
 export const metadata = { title: "Payments — Admin" };
@@ -30,12 +33,17 @@ type Attempt = {
   created_at: string;
 };
 
-const STATUS_STYLE: Record<string, string> = {
-  paid: "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300",
-  pending: "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300",
-  failed: "bg-zinc-100 dark:bg-zinc-800 text-zinc-500",
-  success: "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300",
+const TONE: Record<string, Tone> = {
+  paid: "green",
+  success: "green",
+  pending: "amber",
+  send_otp: "amber",
+  failed: "zinc",
+  duplicate: "red",
 };
+
+const th = "px-6 py-3 text-[10px] font-black uppercase tracking-[0.15em] text-zinc-400 text-left whitespace-nowrap";
+const td = "px-6 py-4 align-middle";
 
 /**
  * The unlock ledger and the raw log of what was asked of Paystack — enough to
@@ -56,28 +64,30 @@ export default async function AdminPaymentsPage() {
       .from("payment_attempts")
       .select("id, reference, channel, status, message, created_at")
       .order("created_at", { ascending: false })
-      .limit(60),
+      .limit(100),
   ]);
 
   const unlocks = (unlockData ?? []) as unknown as Unlock[];
   const attempts = (attemptData ?? []) as Attempt[];
+  const paid = unlocks.filter((u) => u.status === "paid");
   const duplicates = unlocks.filter((u) => u.duplicate_payment);
+  const openNow = paid.filter((u) => u.expires_at && new Date(u.expires_at).getTime() > Date.now()).length;
+  const takings = paid.reduce((sum, u) => sum + Number(u.amount_received ?? u.amount), 0);
+  const currency = unlocks[0]?.currency ?? "KES";
 
   return (
-    <div className="space-y-10">
-      <div className="space-y-2 max-w-2xl">
-        <h2 className="text-3xl font-black text-zinc-900 dark:text-white tracking-tighter">Payments</h2>
-        <p className="text-zinc-500 font-medium">
-          Every unlock payment, when its 3-hour window closes, and every attempt made with Paystack.
-          A payment only counts as paid once Paystack confirms it.
-        </p>
-      </div>
+    <>
+      <PageHeader
+        title="Payments"
+        description="Every unlock payment, when its 3-hour window closes, and every attempt made with Paystack. A payment only counts once Paystack confirms it."
+        meta={`${paid.length} paid · ${formatPrice(takings, currency)} taken · ${openNow} open right now`}
+      />
 
       {duplicates.length > 0 && (
         <div className="p-6 rounded-[2rem] bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 space-y-2">
           <p className="flex items-center gap-2 font-black text-amber-800 dark:text-amber-300">
             <AlertTriangle className="w-5 h-5" /> {duplicates.length} duplicate payment
-            {duplicates.length === 1 ? "" : "s"} to refund by hand
+            {duplicates.length === 1 ? "" : "s"} to refund by M-Pesa
           </p>
           <ul className="text-sm font-bold text-amber-800/80 dark:text-amber-300/80 space-y-1">
             {duplicates.map((d) => (
@@ -87,98 +97,118 @@ export default async function AdminPaymentsPage() {
               </li>
             ))}
           </ul>
+          <p className="text-xs font-bold text-amber-700/70 dark:text-amber-400/70">
+            Once refunded, delete the record so it leaves this list.
+          </p>
         </div>
       )}
 
       {error ? (
-        <p className="p-6 rounded-[2rem] bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 font-bold">
-          Could not load payments. Refresh to try again.
-        </p>
-      ) : unlocks.length === 0 ? (
-        <div className="py-20 text-center space-y-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[3rem]">
-          <Wallet className="w-12 h-12 text-zinc-300 mx-auto" />
-          <p className="text-xl font-black text-zinc-900 dark:text-white">No payments yet</p>
-        </div>
+        <ErrorState text="Could not load payments. Refresh to try again." />
       ) : (
-        <section className="space-y-3">
-          <h3 className="text-xl font-black text-zinc-900 dark:text-white">Unlocks</h3>
-          <div className="overflow-x-auto bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[2rem]">
-            <table className="w-full text-sm">
-              <thead className="text-[10px] font-black uppercase tracking-[0.15em] text-zinc-400 text-left">
-                <tr>
-                  <th className="p-4">Tenant</th>
-                  <th className="p-4">Listing</th>
-                  <th className="p-4">Paid</th>
-                  <th className="p-4">Status</th>
-                  <th className="p-4">Window</th>
-                  <th className="p-4">Reference</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800 font-bold text-zinc-700 dark:text-zinc-300">
-                {unlocks.map((u) => {
-                  const open = u.expires_at && new Date(u.expires_at).getTime() > Date.now();
-                  const label = u.duplicate_payment ? "duplicate" : u.status;
-                  return (
-                    <tr key={u.id}>
-                      <td className="p-4 whitespace-nowrap">
-                        {u.user?.full_name ?? "—"}
-                        {u.user?.phone && <span className="block text-xs text-zinc-400">{u.user.phone}</span>}
-                      </td>
-                      <td className="p-4 max-w-[16rem] truncate">
-                        {u.property ? (
-                          <Link href={`/properties/${u.property.slug}`} className="hover:text-blue-600">
-                            {u.property.title}
-                          </Link>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td className="p-4 whitespace-nowrap">
-                        {formatPrice(u.amount_received ?? u.amount, u.currency)}
-                        <span className="block text-xs text-zinc-400">{formatRelativeDate(u.paid_at ?? u.created_at)}</span>
-                      </td>
-                      <td className="p-4">
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.1em] ${STATUS_STYLE[u.status] ?? STATUS_STYLE.failed}`}>
-                          {label}
-                        </span>
-                      </td>
-                      <td className="p-4 whitespace-nowrap text-xs">
-                        {u.status !== "paid"
-                          ? "—"
-                          : open
-                            ? `Open until ${new Date(u.expires_at!).toLocaleTimeString("en-KE", { hour: "numeric", minute: "2-digit", timeZone: "Africa/Nairobi" })}`
-                            : "Ended"}
-                      </td>
-                      <td className="p-4 text-xs text-zinc-400 font-mono">{u.provider_ref}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </section>
+        <Panel title="Unlocks" description="Paid, failed and duplicate. Checkouts still waiting for a PIN are not shown." flush>
+          {unlocks.length === 0 ? (
+            <EmptyState icon={Wallet} title="No payments yet" text="Unlocks appear here once a tenant pays." />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="border-y border-zinc-100 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-800/30">
+                  <tr>
+                    <th className={th}>Tenant</th>
+                    <th className={th}>Listing</th>
+                    <th className={th}>Amount</th>
+                    <th className={th}>Status</th>
+                    <th className={th}>Window</th>
+                    <th className={th}>Reference</th>
+                    <th className={th}>
+                      <span className="sr-only">Delete</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800 font-bold text-zinc-700 dark:text-zinc-300">
+                  {unlocks.map((u) => {
+                    const open = u.expires_at && new Date(u.expires_at).getTime() > Date.now();
+                    const label = u.duplicate_payment ? "duplicate" : u.status;
+                    return (
+                      <tr key={u.id} className="hover:bg-zinc-50/60 dark:hover:bg-zinc-800/30">
+                        <td className={`${td} whitespace-nowrap`}>
+                          {u.user?.full_name ?? "—"}
+                          {u.user?.phone && <span className="block text-xs text-zinc-400">{u.user.phone}</span>}
+                        </td>
+                        <td className={`${td} max-w-[16rem] truncate`}>
+                          {u.property ? (
+                            <Link href={`/properties/${u.property.slug}`} className="hover:text-blue-600">
+                              {u.property.title}
+                            </Link>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                        <td className={`${td} whitespace-nowrap`}>
+                          {formatPrice(u.amount_received ?? u.amount, u.currency)}
+                          <span className="block text-xs text-zinc-400">
+                            {formatRelativeDate(u.paid_at ?? u.created_at)}
+                          </span>
+                        </td>
+                        <td className={td}>
+                          <Badge tone={TONE[label] ?? "zinc"}>{label}</Badge>
+                        </td>
+                        <td className={`${td} whitespace-nowrap text-xs`}>
+                          {u.status !== "paid"
+                            ? "—"
+                            : open
+                              ? `Open until ${new Date(u.expires_at!).toLocaleTimeString("en-KE", {
+                                  hour: "numeric",
+                                  minute: "2-digit",
+                                  timeZone: "Africa/Nairobi",
+                                })}`
+                              : "Ended"}
+                        </td>
+                        <td className={`${td} text-xs text-zinc-400 font-mono`}>{u.provider_ref}</td>
+                        <td className={`${td} text-right`}>
+                          <DeleteButton
+                            action={deleteUnlockAction.bind(null, u.id)}
+                            itemName="this payment record"
+                            consequence={
+                              u.status === "paid" && open
+                                ? "The tenant loses access to this listing straight away, and the payment leaves your revenue figures."
+                                : "It leaves the ledger and your revenue figures."
+                            }
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Panel>
       )}
 
-      <section className="space-y-3">
-        <h3 className="text-xl font-black text-zinc-900 dark:text-white">Latest attempts with Paystack</h3>
+      <Panel title="Attempts with Paystack" description="The last 100 prompts and card checkouts, newest first." flush>
         {attempts.length === 0 ? (
-          <p className="text-zinc-500 font-medium">No attempts logged yet.</p>
+          <EmptyState icon={ListChecks} title="No attempts logged yet" />
         ) : (
-          <ul className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[2rem] divide-y divide-zinc-100 dark:divide-zinc-800">
-            {attempts.map((a) => (
-              <li key={a.id} className="p-4 flex flex-wrap items-center gap-3 text-sm font-bold">
-                <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.1em] ${STATUS_STYLE[a.status] ?? STATUS_STYLE.pending}`}>
-                  {a.status}
-                </span>
-                <span className="text-zinc-700 dark:text-zinc-300">{a.channel.replace("_", " ")}</span>
-                <span className="text-zinc-400 flex-1 min-w-0 truncate">{a.message ?? ""}</span>
-                <span className="text-xs text-zinc-400 font-mono">{a.reference}</span>
-                <span className="text-xs text-zinc-400">{formatRelativeDate(a.created_at)}</span>
-              </li>
-            ))}
-          </ul>
+          attempts.map((a) => (
+            <div
+              key={a.id}
+              className="px-6 py-3 flex flex-wrap items-center gap-3 text-sm font-bold border-t border-zinc-100 dark:border-zinc-800 first:border-t-0"
+            >
+              <Badge tone={TONE[a.status] ?? "amber"}>{a.status.replace("_", " ")}</Badge>
+              <span className="text-zinc-700 dark:text-zinc-300">{a.channel.replace("_", " ")}</span>
+              <span className="text-zinc-400 flex-1 min-w-0 truncate">{a.message ?? ""}</span>
+              <span className="text-xs text-zinc-400 font-mono hidden md:inline">{a.reference}</span>
+              <span className="text-xs text-zinc-400">{formatRelativeDate(a.created_at)}</span>
+              <DeleteButton
+                action={deletePaymentAttemptAction.bind(null, a.id)}
+                itemName="this log entry"
+                consequence="Only the log line goes; the payment itself is unaffected."
+              />
+            </div>
+          ))
         )}
-      </section>
-    </div>
+      </Panel>
+    </>
   );
 }

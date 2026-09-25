@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Check, Globe, Lock } from "lucide-react";
+import { Loader2, Check, Globe, Lock, ShieldCheck } from "lucide-react";
+import DeleteButton from "@/components/admin/DeleteButton";
 import { toast } from "sonner";
 import { saveSettingAction } from "@/lib/actions/admin";
 import type { AppSettingRow } from "@/lib/supabase/database.types";
@@ -16,7 +17,14 @@ const BOOLEAN = new Set([
 /** Switching these on exposes something that is not built yet. */
 const UNFINISHED = new Set(["stays_enabled", "service_provider_registration_enabled"]);
 
-export default function SettingRow({ setting }: { setting: AppSettingRow }) {
+/** Settings that may be left empty, so the dustbin clears them. */
+const CLEARABLE = new Set([
+  "landlord_listing_fee_offer_label",
+  "landlord_listing_fee_offer_ends_on",
+  "service_provider_onboarding_fee",
+]);
+
+export default function SettingRow({ setting, label }: { setting: AppSettingRow; label?: string }) {
   const router = useRouter();
   const [value, setValue] = useState(setting.value);
   const [pending, start] = useTransition();
@@ -44,10 +52,10 @@ export default function SettingRow({ setting }: { setting: AppSettingRow }) {
     });
 
   return (
-    <div className="p-5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[2rem] flex flex-col md:flex-row md:items-center gap-4">
+    <div className="px-6 py-5 border-t border-zinc-100 dark:border-zinc-800 first:border-t-0 flex flex-col md:flex-row md:items-center gap-4">
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex items-center gap-2">
-          <p className="font-black text-zinc-900 dark:text-white break-all">{setting.key}</p>
+          <p className="font-black text-zinc-900 dark:text-white">{label ?? setting.key}</p>
           {setting.is_public ? (
             <Globe className="w-3.5 h-3.5 text-zinc-400 shrink-0" aria-label="Visible to the apps" />
           ) : (
@@ -55,6 +63,7 @@ export default function SettingRow({ setting }: { setting: AppSettingRow }) {
           )}
         </div>
         {setting.description && <p className="text-sm font-medium text-zinc-500">{setting.description}</p>}
+        {label && <p className="text-[10px] font-mono text-zinc-400">{setting.key}</p>}
       </div>
 
       <div className="flex items-center gap-2 md:w-[22rem] shrink-0">
@@ -100,6 +109,20 @@ export default function SettingRow({ setting }: { setting: AppSettingRow }) {
           </>
         )}
         {isBool && pending && <Loader2 className="w-4 h-4 animate-spin text-zinc-400" />}
+        {CLEARABLE.has(setting.key) ? (
+          <DeleteButton
+            action={() => saveSettingAction(setting.key, "")}
+            itemName={`the value of "${label ?? setting.key}"`}
+            consequence="The setting is left empty, which the apps treat as not set."
+          />
+        ) : (
+          <span
+            title="Required by the apps — it can be changed but not deleted"
+            className="inline-flex items-center justify-center w-10 h-10 text-zinc-300 dark:text-zinc-600 shrink-0"
+          >
+            <ShieldCheck className="w-4 h-4" aria-label="Required" />
+          </span>
+        )}
       </div>
     </div>
   );

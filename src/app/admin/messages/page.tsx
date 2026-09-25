@@ -2,17 +2,32 @@ import Link from "next/link";
 import { MessageSquare, Phone, Mail, UserRound } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { MessageStatusSelect, ReplyForm } from "@/components/admin/AdminInlineForms";
+import DeleteButton from "@/components/admin/DeleteButton";
+import { Badge, EmptyState, ErrorState, PageHeader } from "@/components/admin/AdminUI";
+import { deleteMessageAction } from "@/lib/actions/admin";
 import { formatRelativeDate } from "@/lib/format";
+import type { InquiryStatus } from "@/lib/supabase/database.types";
 import type { InquiryWithProperty } from "@/lib/types";
 
 export const metadata = { title: "Messages — Admin" };
+
+const FILTERS: { value: "" | InquiryStatus; label: string }[] = [
+  { value: "", label: "All" },
+  { value: "new", label: "New" },
+  { value: "read", label: "Read" },
+  { value: "responded", label: "Replied" },
+  { value: "closed", label: "Closed" },
+];
+
+type Search = Promise<{ status?: string }>;
 
 /**
  * Tenants no longer message landlords for free: every message from a listing
  * comes here. A reply is written into the row and lands in the sender's Inbox
  * as an in-app notification.
  */
-export default async function AdminMessagesPage() {
+export default async function AdminMessagesPage({ searchParams }: { searchParams: Search }) {
+  const { status = "" } = await searchParams;
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("inquiries")
@@ -21,44 +36,63 @@ export default async function AdminMessagesPage() {
     .order("created_at", { ascending: false })
     .limit(300);
 
-  const rows = (data ?? []) as unknown as InquiryWithProperty[];
-  const open = rows.filter((r) => r.status === "new").length;
+  const all = (data ?? []) as unknown as InquiryWithProperty[];
+  const rows = status ? all.filter((r) => r.status === status) : all;
+  const countOf = (s: string) => (s ? all.filter((r) => r.status === s).length : all.length);
 
   return (
-    <div className="space-y-8">
-      <div className="space-y-2 max-w-2xl">
-        <h2 className="text-3xl font-black text-zinc-900 dark:text-white tracking-tighter">Messages</h2>
-        <p className="text-zinc-500 font-medium">
-          What tenants ask about listings. Replies go to their Kheja_Link Inbox — there is no email
-          or SMS. Someone who wrote without an account has no Inbox, so call them instead.
-        </p>
-        {open > 0 && (
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-600">{open} new</p>
-        )}
-      </div>
+    <>
+      <PageHeader
+        title="Messages"
+        description="What tenants ask about listings. Replies go to their Kheja_Link Inbox — there is no email or SMS. Someone who wrote without an account has no Inbox, so call them instead."
+        meta={`${countOf("new")} new · ${all.length} in total`}
+      />
+
+      <nav className="flex gap-2 overflow-x-auto scrollbar-hide" aria-label="Filter messages">
+        {FILTERS.map((f) => {
+          const active = f.value === status;
+          return (
+            <Link
+              key={f.label}
+              href={f.value ? `/admin/messages?status=${f.value}` : "/admin/messages"}
+              className={`flex items-center gap-2 px-4 h-10 rounded-2xl text-sm font-black whitespace-nowrap transition-colors ${
+                active
+                  ? "bg-zinc-900 dark:bg-white text-white dark:text-zinc-900"
+                  : "bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:text-blue-600"
+              }`}
+            >
+              {f.label}
+              <span className={`text-xs ${active ? "opacity-70" : "text-zinc-400"}`}>{countOf(f.value)}</span>
+            </Link>
+          );
+        })}
+      </nav>
 
       {error ? (
-        <p className="p-6 rounded-[2rem] bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 font-bold">
-          Could not load messages. Refresh to try again.
-        </p>
+        <ErrorState text="Could not load messages. Refresh to try again." />
       ) : rows.length === 0 ? (
-        <div className="py-20 text-center space-y-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[3rem]">
-          <MessageSquare className="w-12 h-12 text-zinc-300 mx-auto" />
-          <p className="text-xl font-black text-zinc-900 dark:text-white">No messages yet</p>
-          <p className="text-zinc-500 font-medium">Questions tenants send from a listing appear here.</p>
+        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[2rem]">
+          <EmptyState
+            icon={MessageSquare}
+            title={status ? "Nothing here" : "No messages yet"}
+            text="Questions tenants send from a listing appear here."
+          />
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="grid xl:grid-cols-2 gap-4">
           {rows.map((r) => (
             <article
               key={r.id}
               className={`p-6 bg-white dark:bg-zinc-900 border rounded-[2rem] space-y-4 ${
-                r.status === "new" ? "border-blue-300 dark:border-blue-800" : "border-zinc-200 dark:border-zinc-800"
+                r.status === "new" ? "border-blue-300 dark:border-blue-800 shadow-lg shadow-blue-600/5" : "border-zinc-200 dark:border-zinc-800"
               }`}
             >
-              <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 space-y-1">
-                  <p className="text-lg font-black text-zinc-900 dark:text-white truncate">{r.name}</p>
+                  <p className="flex items-center gap-2 text-lg font-black text-zinc-900 dark:text-white">
+                    <span className="truncate">{r.name}</span>
+                    {r.status === "new" && <Badge tone="blue">New</Badge>}
+                  </p>
                   <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">
                     {formatRelativeDate(r.created_at)}
                     {r.property && (
@@ -71,10 +105,17 @@ export default async function AdminMessagesPage() {
                     )}
                   </p>
                 </div>
-                <MessageStatusSelect id={r.id} status={r.status} />
+                <div className="flex items-center gap-1 shrink-0">
+                  <MessageStatusSelect id={r.id} status={r.status} />
+                  <DeleteButton
+                    action={deleteMessageAction.bind(null, r.id)}
+                    itemName={`the message from ${r.name}`}
+                    consequence="The message and your reply are removed from the back office and from the sender's history."
+                  />
+                </div>
               </div>
 
-              <p className="text-sm font-medium text-zinc-600 dark:text-zinc-300 leading-relaxed whitespace-pre-line">
+              <p className="text-sm font-medium text-zinc-600 dark:text-zinc-300 leading-relaxed whitespace-pre-line p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60">
                 {r.message}
               </p>
 
@@ -105,6 +146,6 @@ export default async function AdminMessagesPage() {
           ))}
         </div>
       )}
-    </div>
+    </>
   );
 }

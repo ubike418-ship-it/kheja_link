@@ -10,8 +10,9 @@ import {
   ArrowRight,
   type LucideIcon,
 } from "lucide-react";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getCurrentProfile } from "@/lib/supabase/server";
 import { formatPrice, formatRelativeDate } from "@/lib/format";
+import { Badge, ErrorState, PageHeader } from "@/components/admin/AdminUI";
 
 export const metadata = { title: "Overview — Admin" };
 
@@ -56,7 +57,7 @@ type RecentUnlock = {
  */
 export default async function AdminOverviewPage() {
   const supabase = await createClient();
-  const [{ data, error }, { data: recent }] = await Promise.all([
+  const [{ data, error }, { data: recent }, me] = await Promise.all([
     supabase.rpc("admin_overview"),
     supabase
       .from("contact_unlocks")
@@ -66,15 +67,18 @@ export default async function AdminOverviewPage() {
       .eq("status", "paid")
       .order("paid_at", { ascending: false })
       .limit(8),
+    getCurrentProfile(),
   ]);
 
   if (error || !data) {
-    return (
-      <p className="p-6 rounded-[2rem] bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 font-bold">
-        Could not load the overview. Make sure migration 0016 has been run, then refresh.
-      </p>
-    );
+    return <ErrorState text="Could not load the overview. Make sure migration 0016 has been run, then refresh." />;
   }
+
+  const hour = Number(
+    new Date().toLocaleString("en-KE", { hour: "numeric", hour12: false, timeZone: "Africa/Nairobi" }),
+  );
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const firstName = me?.full_name?.split(" ")[0];
 
   const o = data as unknown as Overview;
   const money = (n: number) => formatPrice(Number(n), o.currency);
@@ -89,7 +93,35 @@ export default async function AdminOverviewPage() {
   ].filter((t) => t.count > 0);
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-8">
+      <PageHeader
+        title={`${greeting}${firstName ? `, ${firstName}` : ""}`}
+        description="How Kheja_Link is doing today, and what needs you."
+        meta={new Date().toLocaleDateString("en-KE", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+          timeZone: "Africa/Nairobi",
+        })}
+        actions={
+          <>
+            <Link
+              href="/admin/payments"
+              className="flex items-center gap-2 h-11 px-5 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm font-black text-zinc-700 dark:text-zinc-200 hover:border-blue-500"
+            >
+              <Wallet className="w-4 h-4" /> Payments
+            </Link>
+            <Link
+              href="/admin/settings"
+              className="flex items-center gap-2 h-11 px-5 rounded-2xl bg-blue-600 text-white text-sm font-black hover:bg-blue-700 shadow-lg shadow-blue-600/20"
+            >
+              Prices &amp; settings
+            </Link>
+          </>
+        }
+      />
+
       <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <Stat icon={Wallet} tone="bg-emerald-600" label="Unlock revenue today" value={money(o.revenue_today)}
           sub={`${money(o.revenue_7d)} this week · ${money(o.revenue_total)} all time`} />
@@ -152,13 +184,7 @@ export default async function AdminOverviewPage() {
                       </p>
                     </div>
                     <span className="font-black text-zinc-900 dark:text-white">{formatPrice(u.amount, u.currency)}</span>
-                    <span
-                      className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.15em] ${
-                        open ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700" : "bg-zinc-100 dark:bg-zinc-800 text-zinc-500"
-                      }`}
-                    >
-                      {open ? "Open" : "Ended"}
-                    </span>
+                    <Badge tone={open ? "green" : "zinc"}>{open ? "Open" : "Ended"}</Badge>
                   </li>
                 );
               })}

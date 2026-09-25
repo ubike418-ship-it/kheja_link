@@ -1,13 +1,13 @@
+import Link from "next/link";
 import { HandCoins, Phone, MapPin, Home, UserRound, CalendarDays } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getUnlockPricing } from "@/lib/queries/pricing";
 import { HouseReviewForm, RefundPaidForm } from "@/components/admin/AdminInlineForms";
+import DeleteButton from "@/components/admin/DeleteButton";
+import { Badge, EmptyState, ErrorState, PageHeader, type Tone } from "@/components/admin/AdminUI";
+import { deleteHouseSubmissionAction } from "@/lib/actions/admin";
 import { formatPrice, formatRelativeDate } from "@/lib/format";
-import type {
-  HouseSubmissionRow,
-  RefundStatus,
-  UnlockRefundRow,
-} from "@/lib/supabase/database.types";
+import type { HouseSubmissionRow, RefundStatus, UnlockRefundRow } from "@/lib/supabase/database.types";
 
 export const metadata = { title: "Houses & refunds — Admin" };
 
@@ -18,26 +18,29 @@ type Submission = HouseSubmissionRow & {
   refund: UnlockRefundRow | UnlockRefundRow[] | null;
 };
 
-const REFUND_STYLES: Record<RefundStatus, string> = {
-  pending: "bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300",
-  approved: "bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300",
-  paid: "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300",
-  rejected: "bg-zinc-100 dark:bg-zinc-800 text-zinc-500",
+const REFUND: Record<RefundStatus, { label: string; tone: Tone }> = {
+  pending: { label: "Refund pending review", tone: "amber" },
+  approved: { label: "Refund approved — send it", tone: "blue" },
+  paid: { label: "Refund paid", tone: "green" },
+  rejected: { label: "No refund", tone: "zinc" },
 };
 
-const REFUND_LABELS: Record<RefundStatus, string> = {
-  pending: "Refund pending review",
-  approved: "Refund approved — send it",
-  paid: "Refund paid",
-  rejected: "No refund",
-};
+const FILTERS = [
+  { value: "", label: "All" },
+  { value: "review", label: "To review" },
+  { value: "send", label: "Refunds to send" },
+  { value: "done", label: "Done" },
+] as const;
+
+type Search = Promise<{ show?: string }>;
 
 /**
  * Houses tenants gave us. Approving one approves the tenant's refund (when they
  * have a paid unlock to refund against); the admin then sends the money by
  * M-Pesa and marks it paid here. The tenant hears about every step in-app.
  */
-export default async function AdminRefundsPage() {
+export default async function AdminRefundsPage({ searchParams }: { searchParams: Search }) {
+  const { show = "" } = await searchParams;
   const supabase = await createClient();
   const [{ data, error }, pricing] = await Promise.all([
     supabase
@@ -52,37 +55,74 @@ export default async function AdminRefundsPage() {
     getUnlockPricing(),
   ]);
 
-  const rows = (data ?? []) as unknown as Submission[];
+  const all = (data ?? []) as unknown as Submission[];
   const refundOf = (s: Submission) => (Array.isArray(s.refund) ? (s.refund[0] ?? null) : s.refund);
-  const toPay = rows.filter((s) => refundOf(s)?.status === "approved");
-  const toReview = rows.filter((s) => s.status === "pending");
+  const toReview = all.filter((s) => s.status === "pending");
+  const toSend = all.filter((s) => refundOf(s)?.status === "approved");
+  const done = all.filter((s) => s.status !== "pending" && refundOf(s)?.status !== "approved");
+  const rows = show === "review" ? toReview : show === "send" ? toSend : show === "done" ? done : all;
+  const countOf = (v: string) =>
+    v === "review" ? toReview.length : v === "send" ? toSend.length : v === "done" ? done.length : all.length;
+  const paidOut = all.reduce((sum, s) => {
+    const r = refundOf(s);
+    return r?.status === "paid" ? sum + Number(r.amount) : sum;
+  }, 0);
 
   return (
-    <div className="space-y-8">
-      <div className="space-y-2 max-w-2xl">
-        <h2 className="text-3xl font-black text-zinc-900 dark:text-white tracking-tighter">Houses &amp; refunds</h2>
-        <p className="text-zinc-500 font-medium">
-          A tenant who paid {formatPrice(pricing.unlockFee, pricing.currency)} to unlock a listing and then
-          gives us a house gets {formatPrice(pricing.refundAmount, pricing.currency)} back once you approve
-          the house. Send the refund by M-Pesa, then mark it paid. Both amounts are in Business settings.
-        </p>
-        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">
-          {toReview.length} to review · {toPay.length} refund{toPay.length === 1 ? "" : "s"} to send
-        </p>
-      </div>
+    <>
+      <PageHeader
+        title="Houses & refunds"
+        description={`A tenant who paid ${formatPrice(pricing.unlockFee, pricing.currency)} to unlock a listing and then gives us a house gets ${formatPrice(pricing.refundAmount, pricing.currency)} back once you approve the house. Send it by M-Pesa, then mark it paid. Both amounts are in Business settings.`}
+        meta={`${toReview.length} to review · ${toSend.length} to send · ${formatPrice(paidOut, pricing.currency)} refunded so far`}
+      />
+
+      <section className="grid sm:grid-cols-3 gap-4">
+        {[
+          { step: "1", title: "Review the house", text: "Call the landlord, then approve or reject.", count: toReview.length, tone: "text-amber-600" },
+          { step: "2", title: "Send the refund", text: "Pay the tenant by M-Pesa.", count: toSend.length, tone: "text-blue-600" },
+          { step: "3", title: "Mark it paid", text: "Add the M-Pesa reference; the tenant is told.", count: null, tone: "text-emerald-600" },
+        ].map((s) => (
+          <div key={s.step} className="p-5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[2rem] flex gap-4">
+            <span className={`text-3xl font-black tracking-tighter ${s.tone}`}>{s.step}</span>
+            <div className="space-y-1">
+              <p className="font-black text-zinc-900 dark:text-white">
+                {s.title}
+                {s.count !== null && s.count > 0 && <span className={`ml-2 ${s.tone}`}>({s.count})</span>}
+              </p>
+              <p className="text-xs font-bold text-zinc-500">{s.text}</p>
+            </div>
+          </div>
+        ))}
+      </section>
+
+      <nav className="flex gap-2 overflow-x-auto scrollbar-hide" aria-label="Filter houses">
+        {FILTERS.map((f) => {
+          const active = f.value === show;
+          return (
+            <Link
+              key={f.label}
+              href={f.value ? `/admin/refunds?show=${f.value}` : "/admin/refunds"}
+              className={`flex items-center gap-2 px-4 h-10 rounded-2xl text-sm font-black whitespace-nowrap transition-colors ${
+                active
+                  ? "bg-zinc-900 dark:bg-white text-white dark:text-zinc-900"
+                  : "bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:text-blue-600"
+              }`}
+            >
+              {f.label}
+              <span className={`text-xs ${active ? "opacity-70" : "text-zinc-400"}`}>{countOf(f.value)}</span>
+            </Link>
+          );
+        })}
+      </nav>
 
       {error ? (
-        <p className="p-6 rounded-[2rem] bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 font-bold">
-          Could not load houses. Refresh to try again.
-        </p>
+        <ErrorState text="Could not load houses. Refresh to try again." />
       ) : rows.length === 0 ? (
-        <div className="py-20 text-center space-y-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[3rem]">
-          <HandCoins className="w-12 h-12 text-zinc-300 mx-auto" />
-          <p className="text-xl font-black text-zinc-900 dark:text-white">No houses yet</p>
-          <p className="text-zinc-500 font-medium">Houses tenants give us from the app appear here.</p>
+        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[2rem]">
+          <EmptyState icon={HandCoins} title={show ? "Nothing here" : "No houses yet"} text="Houses tenants give us from the app appear here." />
         </div>
       ) : (
-        <div className="grid md:grid-cols-2 gap-4">
+        <div className="grid xl:grid-cols-2 gap-4">
           {rows.map((s) => {
             const refund = refundOf(s);
             const where = [s.area, s.location?.name].filter(Boolean).join(", ");
@@ -92,23 +132,33 @@ export default async function AdminRefundsPage() {
                 className="p-6 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[2rem] space-y-4"
               >
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 space-y-1">
+                  <div className="min-w-0 space-y-2">
                     <p className="text-lg font-black text-zinc-900 dark:text-white">
                       {[s.bedrooms != null ? `${s.bedrooms}-bedroom` : null, s.property_type?.name ?? "House"]
                         .filter(Boolean)
                         .join(" ")}
                     </p>
-                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">
-                      {s.status} · {formatRelativeDate(s.created_at)}
-                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      <Badge tone={s.status === "approved" ? "green" : s.status === "rejected" ? "red" : "amber"}>
+                        House {s.status}
+                      </Badge>
+                      {refund && <Badge tone={REFUND[refund.status].tone}>{REFUND[refund.status].label}</Badge>}
+                    </div>
                   </div>
-                  {refund && (
-                    <span
-                      className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-[0.15em] shrink-0 ${REFUND_STYLES[refund.status]}`}
-                    >
-                      {REFUND_LABELS[refund.status]}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-[10px] font-black uppercase tracking-[0.15em] text-zinc-400">
+                      {formatRelativeDate(s.created_at)}
                     </span>
-                  )}
+                    <DeleteButton
+                      action={deleteHouseSubmissionAction.bind(null, s.id)}
+                      itemName="this house"
+                      consequence={
+                        refund && refund.status !== "paid"
+                          ? "Its refund is cancelled and removed too, and the tenant's unlock can earn a refund again."
+                          : "Its refund record goes with it."
+                      }
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-1.5 text-sm font-bold text-zinc-600 dark:text-zinc-300">
@@ -143,10 +193,12 @@ export default async function AdminRefundsPage() {
                   </p>
                 </div>
 
-                {s.notes && <p className="text-sm font-medium text-zinc-500 leading-relaxed">{s.notes}</p>}
-                {s.admin_note && (
-                  <p className="text-xs font-bold text-zinc-400">Your note: &ldquo;{s.admin_note}&rdquo;</p>
+                {s.notes && (
+                  <p className="text-sm font-medium text-zinc-500 leading-relaxed p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60">
+                    {s.notes}
+                  </p>
                 )}
+                {s.admin_note && <p className="text-xs font-bold text-zinc-400">Your note: &ldquo;{s.admin_note}&rdquo;</p>}
 
                 {s.status === "pending" && <HouseReviewForm submissionId={s.id} />}
                 {refund?.status === "approved" && (
@@ -163,6 +215,6 @@ export default async function AdminRefundsPage() {
           })}
         </div>
       )}
-    </div>
+    </>
   );
 }
