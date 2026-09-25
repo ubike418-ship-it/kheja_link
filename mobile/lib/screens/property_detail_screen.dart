@@ -632,32 +632,48 @@ class _RentCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(KhejaRadius.xl),
         border: Border.all(color: theme.colorScheme.outline),
       ),
+      // Both sides shrink to fit rather than overflow: a long rent
+      // ("KSh 120,000") on a small phone would not fit at full size.
       child: Row(
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                property.pricePeriod == 'year' ? 'ANNUAL RENT' : 'MONTHLY RENT',
-                style: kEyebrowStyle.copyWith(color: KhejaColors.zinc400),
-              ),
-              const SizedBox(height: 6),
-              Text(property.priceLabel, style: theme.textTheme.headlineMedium),
-            ],
+          Expanded(
+            flex: 3,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  property.pricePeriod == 'year' ? 'ANNUAL RENT' : 'MONTHLY RENT',
+                  style: kEyebrowStyle.copyWith(color: KhejaColors.zinc400),
+                ),
+                const SizedBox(height: 6),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(property.priceLabel, style: theme.textTheme.headlineMedium),
+                ),
+              ],
+            ),
           ),
-          const Spacer(),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text('DEPOSIT',
-                  style: kEyebrowStyle.copyWith(color: KhejaColors.zinc400)),
-              const SizedBox(height: 6),
-              Text(
-                '${property.depositMonths} '
-                '${property.depositMonths == 1 ? 'month' : 'months'}',
-                style: theme.textTheme.titleLarge,
-              ),
-            ],
+          const SizedBox(width: 12),
+          Flexible(
+            flex: 2,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text('DEPOSIT',
+                    style: kEyebrowStyle.copyWith(color: KhejaColors.zinc400)),
+                const SizedBox(height: 6),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    '${property.depositMonths} '
+                    '${property.depositMonths == 1 ? 'month' : 'months'}',
+                    style: theme.textTheme.titleLarge,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
