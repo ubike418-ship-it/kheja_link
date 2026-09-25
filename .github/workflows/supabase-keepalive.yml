@@ -6,7 +6,9 @@
 # second, independent keep-alive once a day.
 #
 # Setup — GitHub → Settings → Secrets and variables → Actions → New secret:
-#   SUPABASE_URL       https://<project-ref>.supabase.co
+#   SUPABASE_URL       https://<project-ref>.supabase.co   (the Project URL
+#                      from Supabase → Project Settings → API — not the
+#                      dashboard link). Just the project ref also works.
 #   SUPABASE_ANON_KEY  the anon / public key (safe; RLS protects the data)
 #
 # GitHub turns scheduled workflows off after 60 days with no commits to the
@@ -30,22 +32,40 @@ jobs:
     steps:
       - name: Query the database
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          RAW_URL: ${{ secrets.SUPABASE_URL }}
+          RAW_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
-          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+          # Forgive the usual copy-paste slips: spaces, quotes, line breaks,
+          # a trailing slash or path, a missing https://, or just the ref.
+          clean() { printf '%s' "$1" | tr -d ' \t\r\n"'"'"; }
+          URL=$(clean "$RAW_URL")
+          KEY=$(clean "$RAW_KEY")
+          URL=${URL%/}
+          # The dashboard link (supabase.com/dashboard/project/<ref>) carries the ref too.
+          REF_IN_DASHBOARD=$(printf '%s' "$URL" | sed -nE 's#.*supabase\.com/dashboard/project/([a-z0-9]{20}).*#\1#p')
+          if [ -n "$REF_IN_DASHBOARD" ]; then URL="$REF_IN_DASHBOARD"; fi
+          if printf '%s' "$URL" | grep -Eq '^[a-z0-9]{20}$'; then URL="https://$URL.supabase.co"; fi
+          case "$URL" in http://*|https://*) ;; *) URL="https://$URL" ;; esac
+          URL=$(printf '%s' "$URL" | sed -E 's#^(https?://[^/]+).*#\1#; s#^http://#https://#')
+
+          if [ -z "$URL" ] || [ -z "$KEY" ]; then
             echo "::error::Add the SUPABASE_URL and SUPABASE_ANON_KEY repository secrets."
             exit 1
           fi
+          if ! printf '%s' "$URL" | grep -Eq '^https://[a-z0-9]{20}\.supabase\.co$'; then
+            echo "::error::SUPABASE_URL is not a Supabase project URL. Set it to the Project URL from Supabase → Project Settings → API, e.g. https://abcdefghijklmnopqrst.supabase.co"
+            exit 1
+          fi
+
           curl --fail --silent --show-error --retry 3 --retry-delay 10 --max-time 30 \
-            "$SUPABASE_URL/rest/v1/property_types?select=id&limit=1" \
-            -H "apikey: $SUPABASE_ANON_KEY" \
-            -H "Authorization: Bearer $SUPABASE_ANON_KEY"
+            "$URL/rest/v1/property_types?select=id&limit=1" \
+            -H "apikey: $KEY" \
+            -H "Authorization: Bearer $KEY"
           echo
           curl --fail --silent --show-error --retry 3 --retry-delay 10 --max-time 30 \
-            -X POST "$SUPABASE_URL/rest/v1/rpc/run_daily_maintenance" \
-            -H "apikey: $SUPABASE_ANON_KEY" \
-            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            -X POST "$URL/rest/v1/rpc/run_daily_maintenance" \
+            -H "apikey: $KEY" \
+            -H "Authorization: Bearer $KEY" \
             -H "Content-Type: application/json" \
             -d '{}'
           echo
