@@ -21,6 +21,10 @@ on:
   schedule:
     - cron: "17 * * * *"
   workflow_dispatch:
+  # Also run once whenever this file changes, so a fix is checked at once.
+  push:
+    branches: [main]
+    paths: [".github/workflows/supabase-keepalive.yml"]
 
 permissions:
   contents: read
@@ -35,11 +39,13 @@ jobs:
           RAW_URL: ${{ secrets.SUPABASE_URL }}
           RAW_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
-          # Forgive the usual copy-paste slips: spaces, quotes, line breaks,
-          # a trailing slash or path, a missing https://, or just the ref.
-          clean() { printf '%s' "$1" | tr -d ' \t\r\n"'"'"; }
-          URL=$(clean "$RAW_URL")
-          KEY=$(clean "$RAW_KEY")
+          # Forgive copy-paste slips: spaces, quotes, line breaks, invisible
+          # characters picked up from a web page (zero-width or non-breaking
+          # spaces), capitals, a trailing slash or path, a missing https://,
+          # just the ref, or the dashboard link. Only characters that can be
+          # in a URL or a key survive.
+          URL=$(printf '%s' "$RAW_URL" | LC_ALL=C tr -cd 'A-Za-z0-9:/._-' | tr 'A-Z' 'a-z')
+          KEY=$(printf '%s' "$RAW_KEY" | LC_ALL=C tr -cd 'A-Za-z0-9._-')
           URL=${URL%/}
           # The dashboard link (supabase.com/dashboard/project/<ref>) carries the ref too.
           REF_IN_DASHBOARD=$(printf '%s' "$URL" | sed -nE 's#.*supabase\.com/dashboard/project/([a-z0-9]{20}).*#\1#p')
@@ -53,9 +59,11 @@ jobs:
             exit 1
           fi
           if ! printf '%s' "$URL" | grep -Eq '^https://[a-z0-9]{20}\.supabase\.co$'; then
-            echo "::error::SUPABASE_URL is not a Supabase project URL. Set it to the Project URL from Supabase → Project Settings → API, e.g. https://abcdefghijklmnopqrst.supabase.co"
+            # Enough to recognise the mistake without printing the value.
+            echo "::error::SUPABASE_URL is not a Supabase project URL (after clean-up it is ${#URL} characters and starts '$(printf '%s' "$URL" | cut -c1-12)'). Set it to the Project URL from Supabase → Project Settings → API, e.g. https://abcdefghijklmnopqrst.supabase.co"
             exit 1
           fi
+          echo "Pinging ${URL%%.supabase.co}.supabase.co"
 
           curl --fail --silent --show-error --retry 3 --retry-delay 10 --max-time 30 \
             "$URL/rest/v1/property_types?select=id&limit=1" \

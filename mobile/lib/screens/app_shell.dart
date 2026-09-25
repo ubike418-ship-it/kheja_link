@@ -52,9 +52,9 @@ class _AppShellState extends State<AppShell> {
       if (!mounted) return;
       if (event.event == AuthChangeEvent.signedIn ||
           event.event == AuthChangeEvent.signedOut) {
-        for (final key in _navigatorKeys) {
-          key.currentState?.popUntil((route) => route.isFirst);
-        }
+        // Every tab was built for the old account (or for nobody). Start each
+        // one afresh, so no screen keeps showing "Sign in" after signing in.
+        setState(_rebuildKeys);
         _loadProfile();
       }
     });
@@ -98,8 +98,17 @@ class _AppShellState extends State<AppShell> {
         }
       }
     }
+    final wasLandlord = _isLandlord;
     setState(() {
       _profile = profile;
+      // The account turned out to be the other kind (a landlord or admin who
+      // came in through the tenant door, or the reverse): the tab set changes,
+      // and each tab's navigator must be rebuilt, or it keeps showing the
+      // screen it was first created with.
+      if (_isLandlord != wasLandlord) {
+        _rebuildKeys();
+        _index = 0;
+      }
       if (_index >= _tabs.length) _index = 0;
     });
     _loadUnread();
