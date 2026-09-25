@@ -190,6 +190,35 @@ the split in force at the time.
 - **Existing access is kept**: unlocks paid at KES 150 and House Hunting passes bought before
   0015 keep working. The pass itself is no longer sold.
 
+## Security, the locked location and 3-hour unlocks (0016)
+
+[`supabase/migrations/0016_security_location_lock_3h_unlocks.sql`](supabase/migrations/0016_security_location_lock_3h_unlocks.sql),
+from a pre-launch security review:
+
+- **Sign-up can no longer create an admin.** The role in sign-up metadata is clamped to tenant
+  or landlord, and a guard stops any non-admin writing a privileged profile row.
+- **Landlord phone numbers are no longer public.** `profiles` is readable only by its owner and
+  admins; everyone else reads `public_profiles` (name, avatar, badge).
+- **The location is locked.** Everyone sees the area and the landlord's description of the
+  location (`nearby`); the street, building and Google Maps pin come only through
+  `get_property_contact()`. Search no longer indexes the street.
+- **An unlock lasts `contact_unlock_hours` (3) from payment**, then the listing locks again and
+  the tenant pays again to reopen it.
+- **Rate limits**: 5 messages an hour per account/phone/email; M-Pesa prompts limited per
+  payment, per account and per phone number (the payment server checks `payment_attempts`).
+- **Back office**: `admin_overview()` and `admin_list_users()` power `/admin` — Overview,
+  Users, Listings, Payments, Messages, Houses & refunds, Service providers, Stays, Settings.
+
+The website also sends security headers (CSP, HSTS, no framing, nosniff), card checkout requires
+the signed-in owner of the payment, and the Android app disables backups and cleartext HTTP.
+
+### Going live: reset the data
+
+[`supabase/reset_for_production.sql`](supabase/reset_for_production.sql) is **not** a migration.
+Run it once, by hand, after 0016: it deletes every account except the demo landlord (and all
+their activity), keeps the demo landlord's sample listings, areas, types, amenities, providers
+and prices, then shows how to make your own account the admin.
+
 ### Payments
 
 Tenants pay **inside Kheja_Link's own screens**: they choose M-Pesa, type their number, and

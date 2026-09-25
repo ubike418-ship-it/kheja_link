@@ -24,7 +24,7 @@ const faqs = [
   },
   {
     q: "How does unlocking work?",
-    a: "Tap \"Unlock contact\" on a listing in the app. You pay once for that listing and the details stay yours — you are never charged twice for the same house. It is not part of your rent or deposit, which you pay the landlord directly.",
+    a: "Tap \"Unlock contact\" on a listing in the app. The landlord's and caretaker's numbers, the exact address and the Google Maps pin open for 3 hours from when you pay. While they are open you are never charged again for that house; after 3 hours it locks, and you can unlock it again if you need to. It is not part of your rent or deposit, which you pay the landlord directly.",
   },
   {
     q: "Can I get money back?",

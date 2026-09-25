@@ -50,7 +50,13 @@ export async function POST(request: Request) {
 
   const reference = event.data?.reference;
 
-  if (event.event !== "charge.success" || event.data?.status !== "success" || !reference) {
+  if (
+    event.event !== "charge.success" ||
+    event.data?.status !== "success" ||
+    !reference ||
+    // Every Kheja_Link price is in shillings; anything else is not our charge.
+    (event.data?.currency !== undefined && event.data.currency !== "KES")
+  ) {
     // Acknowledge anything else so Paystack stops retrying.
     return NextResponse.json({ received: true });
   }

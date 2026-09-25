@@ -32,10 +32,16 @@
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <uses-feature android:name="android.hardware.location.gps" android:required="false"/>
 
+    <!-- allowBackup/fullBackupContent off: the signed-in session lives in app
+         storage, and a cloud or adb backup must never carry it to another
+         device. Cleartext HTTP is refused; everything the app talks to is HTTPS. -->
     <application
         android:label="Kheja_Link"
         android:name="${applicationName}"
-        android:icon="@mipmap/launcher_icon">
+        android:icon="@mipmap/launcher_icon"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:usesCleartextTraffic="false">
         <activity
             android:name=".MainActivity"
             android:exported="true"

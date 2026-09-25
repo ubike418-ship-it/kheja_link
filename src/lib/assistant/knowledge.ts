@@ -189,7 +189,7 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
         `For house hunters: searching, filtering, saving homes and messaging the Kheja_Link team cost ` +
         `nothing. When you find a home you want, tap "Unlock contact" on it in the app to get the ` +
         `landlord's and caretaker's numbers and the exact location. You see the amount and approve ` +
-        `it by M-Pesa right then — once per listing.\n\n` +
+        `it by M-Pesa right then, and the details stay open for 3 hours.\n\n` +
         `For landlords: listing a property is free.\n\n` +
         `We don't take a commission on rent — rent and deposits go directly between you and the landlord.`,
       href: "/help",
@@ -323,8 +323,7 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
     answer: () => ({
       message:
         `Tap "Unlock contact" on the listing in the Kheja_Link app. You get the landlord's and ` +
-        `caretaker's numbers and the exact location, and they stay yours — you never pay twice for the ` +
-        `same house.\n\n` +
+        `caretaker's numbers, the exact address and the map pin, open for 3 hours from when you pay.\n\n` +
         `Not ready to unlock? Use **Message Kheja_Link** on the listing. Messages come to our team, not ` +
         `the landlord, and our reply lands in your in-app Inbox.\n\n` +
         `When you arrange a viewing, go during daylight and never pay anything before seeing the place.`,

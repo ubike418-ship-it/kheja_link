@@ -151,11 +151,12 @@ class _HuntingScreenState extends State<HuntingScreen> {
                   : 'Open a listing and tap Unlock contact. You see the amount and pay by '
                       'M-Pesa right there — nothing is charged before you approve it.',
             ),
-            const _Point(
+            _Point(
               icon: Icons.verified_user_rounded,
               color: KhejaColors.emerald,
-              text: 'Once per listing. The details stay yours, and you are never charged '
-                  'twice for the same home.',
+              text: 'The contacts, exact address and map pin open for '
+                  '${_settings.unlockHours} hours. While they are open you are never charged '
+                  'again for that home.',
             ),
             const _Point(
               icon: Icons.key_rounded,

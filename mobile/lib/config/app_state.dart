@@ -5,8 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// whether we have already asked for permissions.
 ///
 /// There is no "system" option by design — the app is light or dark, and you
-/// flip it by double-tapping anywhere on the home header rather than hunting
-/// for a toggle icon.
+/// flip it by double-tapping anywhere in the app rather than hunting for a
+/// toggle icon.
 class AppState extends ChangeNotifier {
   AppState._();
 

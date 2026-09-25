@@ -85,7 +85,10 @@ export type PropertyRow = Timestamps & {
   description: string | null;
   property_type_id: string;
   location_id: string;
+  /** Locked behind the paid unlock (0016); only get_property_contact returns it. */
   address_line: string | null;
+  /** The landlord's public description of the location. */
+  nearby: string | null;
   price_amount: number;
   price_currency: string;
   price_period: PricePeriod;
@@ -213,6 +216,23 @@ export type ContactUnlockRow = {
   duplicate_payment: boolean;
   created_at: string;
   paid_at: string | null;
+  /** End of the paid window (contact_unlock_hours after payment, 0016). */
+  expires_at: string | null;
+};
+
+export type PaymentAttemptRow = {
+  id: string;
+  reference: string;
+  product: "hunting_fee" | "contact_unlock";
+  channel: "mobile_money" | "card" | "checkout";
+  status: string;
+  display_text: string | null;
+  provider_ref: string | null;
+  message: string | null;
+  user_id: string | null;
+  msisdn_hash: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type HouseSubmissionRow = Timestamps & {
@@ -349,6 +369,12 @@ export type Database = {
         Update: Partial<HouseSubmissionRow>;
         Relationships: [];
       };
+      payment_attempts: {
+        Row: PaymentAttemptRow;
+        Insert: Insertable<PaymentAttemptRow, "reference" | "product" | "channel">;
+        Update: Partial<PaymentAttemptRow>;
+        Relationships: [];
+      };
       unlock_refunds: {
         Row: UnlockRefundRow;
         Insert: Insertable<UnlockRefundRow, "user_id" | "submission_id" | "amount">;
@@ -377,6 +403,8 @@ export type Database = {
           landlord_name: string | null;
           caretaker_name: string | null;
           caretaker_phone: string | null;
+          address_line: string | null;
+          building_name: string | null;
         }[];
       };
       run_daily_maintenance: {
@@ -403,6 +431,25 @@ export type Database = {
       admin_review_house_submission: {
         Args: { p_submission_id: string; p_approve: boolean; p_note?: string | null };
         Returns: string;
+      };
+      admin_overview: {
+        Args: Record<string, never>;
+        Returns: Record<string, number | string>;
+      };
+      admin_list_users: {
+        Args: Record<string, never>;
+        Returns: {
+          id: string;
+          email: string | null;
+          full_name: string | null;
+          phone: string | null;
+          role: UserRole;
+          is_verified: boolean;
+          created_at: string;
+          last_sign_in_at: string | null;
+          listings: number;
+          unlocks: number;
+        }[];
       };
       admin_mark_refund_paid: {
         Args: { p_refund_id: string; p_reference?: string | null };

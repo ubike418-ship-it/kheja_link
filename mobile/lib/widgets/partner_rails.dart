@@ -381,3 +381,27 @@ class _ProviderCard extends StatelessWidget {
     );
   }
 }
+
+/// Our moving partner, MoveMate Kenya, as one card: shown on the tenant home
+/// screen and pointed at by the welcome tour.
+class MoveMateSpotlight extends StatelessWidget {
+  const MoveMateSpotlight({super.key, this.partner});
+
+  /// The live row, once loaded. Until then (or offline) the card still shows,
+  /// from the details that ship with the app.
+  final Partner? partner;
+
+  static const fallback = Partner(
+    id: 'movemate-kenya',
+    category: 'movers',
+    slug: 'movemate-kenya',
+    name: 'MoveMate Kenya',
+    tagline: 'Our moving partner',
+    brandColor: '#2F8F2F',
+    phone: '+254710655709',
+    isOurs: true,
+  );
+
+  @override
+  Widget build(BuildContext context) => _ProviderCard(partner: partner ?? fallback);
+}

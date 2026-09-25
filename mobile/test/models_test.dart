@@ -55,6 +55,7 @@ void main() {
       expect(s.houseRefundAmount, 200);
       expect(s.refundLabel, 'KSh 200');
       expect(s.refundsEnabled, isTrue);
+      expect(s.unlockHours, 3);
       expect(s.listingIsFree, isTrue);
       expect(s.listingOfferEndsOn, isNull);
     });
@@ -102,6 +103,31 @@ void main() {
       expect(c.reference, 'kl_abc123def456');
       expect(c.amountLabel, 'KSh 500');
       expect(c.alreadyUnlocked, isFalse);
+    });
+
+    test('an unlock carries its 3-hour window and the exact location', () {
+      final until = DateTime.now().toUtc().add(const Duration(hours: 3));
+      final c = PropertyContact.fromMap({
+        'unlocked': true,
+        'unlocked_until': until.toIso8601String(),
+        'address_line': 'Kinoru Road, plot 42',
+        'building_name': 'Summit Heights',
+        'contact_phone': '+254700000000',
+      });
+      expect(c.unlocked, isTrue);
+      expect(c.unlockedUntil!.difference(DateTime.now()).inMinutes, inInclusiveRange(178, 180));
+      expect(c.addressLine, 'Kinoru Road, plot 42');
+      expect(c.buildingName, 'Summit Heights');
+    });
+
+    test('a locked listing carries no location or window', () {
+      final c = PropertyContact.fromMap({'unlocked': false});
+      expect(c.unlockedUntil, isNull);
+      expect(c.addressLine, isNull);
+    });
+
+    test('the unlock length comes from settings', () {
+      expect(BusinessSettings.fromMap({'contact_unlock_hours': '6'}).unlockHours, 6);
     });
 
     test('an already unlocked listing has nothing to pay', () {

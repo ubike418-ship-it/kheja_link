@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../config/theme.dart';
@@ -11,8 +14,9 @@ import 'kheja_sheet.dart';
 import 'states.dart';
 
 /// The contact unlock: one price for every listing (contact_unlock_fee, KSh
-/// 500 by default), charged once per listing when the tenant taps "Unlock
-/// contact".
+/// 500 by default), charged when the tenant taps "Unlock contact". It opens
+/// the contacts and the exact location for contact_unlock_hours (3), after
+/// which the listing locks again.
 ///
 /// The card deliberately shows no price. It first appears on the payment
 /// screen after the tap, read from the checkout the database created, so the
@@ -45,6 +49,70 @@ class UnlockCard extends StatefulWidget {
 class _UnlockCardState extends State<UnlockCard> {
   bool _busy = false;
   bool _awaitingReturn = false;
+
+  /// For the unlock duration in the copy. The price is not shown here.
+  BusinessSettings _settings = const BusinessSettings();
+
+  /// Keeps "2h 13m left" current, and locks the card again when the window
+  /// closes — by asking the database, which stops sending the details.
+  Timer? _tick;
+  Timer? _expiry;
+
+  @override
+  void initState() {
+    super.initState();
+    khejaApi.cachedBusinessSettings().then((s) {
+      if (mounted) setState(() => _settings = s);
+    });
+    khejaApi.fetchBusinessSettings().then((s) {
+      if (mounted) setState(() => _settings = s);
+    });
+    _scheduleExpiry();
+  }
+
+  @override
+  void didUpdateWidget(UnlockCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.contact.unlockedUntil != widget.contact.unlockedUntil ||
+        oldWidget.contact.unlocked != widget.contact.unlocked) {
+      _scheduleExpiry();
+    }
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    _expiry?.cancel();
+    super.dispose();
+  }
+
+  void _scheduleExpiry() {
+    _tick?.cancel();
+    _expiry?.cancel();
+    final until = widget.contact.unlockedUntil;
+    if (!widget.contact.unlocked || until == null) return;
+    final left = until.difference(DateTime.now());
+    if (left.isNegative) {
+      widget.onUnlocked();
+      return;
+    }
+    _tick = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() {});
+    });
+    _expiry = Timer(left + const Duration(seconds: 2), () {
+      if (!mounted) return;
+      widget.onUnlocked();
+      showKhejaSnack(context, 'Your ${_settings.unlockHours}-hour unlock for this home has ended.');
+    });
+  }
+
+  String _timeLeft(DateTime until) {
+    final left = until.difference(DateTime.now());
+    if (left.inMinutes < 1) return 'less than a minute left';
+    final h = left.inHours;
+    final m = left.inMinutes % 60;
+    return h > 0 ? '${h}h ${m}m left' : '${m}m left';
+  }
 
   Future<void> _launch(Uri uri, String failure) async {
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -88,14 +156,14 @@ class _UnlockCardState extends State<UnlockCard> {
         amountLabel: checkout.amountLabel,
         title: 'Unlock contact',
         what: 'Landlord and caretaker numbers and the exact location for '
-            '"${widget.property.title}". One-off — never charged again for this home.',
+            '"${widget.property.title}", open for ${_settings.unlockHours} hours.',
         cardCheckoutUrl: () => KhejaCheckout.cardCheckoutUrl(reference),
       ),
     );
 
     if (!mounted) return;
     if (paid == true) {
-      showKhejaSnack(context, 'Unlocked. The details are below and stay yours.');
+      showKhejaSnack(context, 'Unlocked for ${_settings.unlockHours} hours. The details are below.');
     } else {
       setState(() => _awaitingReturn = true);
     }
@@ -150,14 +218,17 @@ class _UnlockCardState extends State<UnlockCard> {
             borderRadius: BorderRadius.circular(KhejaRadius.md),
             border: Border.all(color: KhejaColors.emerald.withValues(alpha: 0.3)),
           ),
-          child: const Row(
+          child: Row(
             children: [
-              Icon(Icons.lock_open_rounded, size: 16, color: KhejaColors.emerald),
-              SizedBox(width: 10),
+              const Icon(Icons.lock_open_rounded, size: 16, color: KhejaColors.emerald),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'Unlocked — these details stay yours for this home.',
-                  style: TextStyle(
+                  c.unlockedUntil == null
+                      ? 'Unlocked'
+                      : 'Unlocked until ${DateFormat('h:mm a').format(c.unlockedUntil!)} · '
+                          '${_timeLeft(c.unlockedUntil!)}',
+                  style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w800,
                     color: KhejaColors.emerald,
@@ -168,6 +239,13 @@ class _UnlockCardState extends State<UnlockCard> {
           ),
         ),
         const SizedBox(height: 16),
+
+        // Where exactly — part of what the unlock buys.
+        if ((c.addressLine?.trim().isNotEmpty ?? false) ||
+            (c.buildingName?.trim().isNotEmpty ?? false)) ...[
+          _ExactLocation(address: c.addressLine, building: c.buildingName),
+          const SizedBox(height: 12),
+        ],
 
         // The landlord.
         _ContactPerson(
@@ -297,10 +375,10 @@ class _UnlockCardState extends State<UnlockCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Contact the landlord',
+                    Text('Contact & exact location',
                         style: theme.textTheme.titleMedium),
                     Text(
-                      'Landlord, caretaker, management line and map pin',
+                      'Landlord, caretaker, exact address and Google Maps pin',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -349,13 +427,58 @@ class _UnlockCardState extends State<UnlockCard> {
 
           const SizedBox(height: 12),
           Text(
-            'Unlock once and the details stay yours — you never pay again for this home. '
-            'Not part of your rent or deposit.',
+            'The landlord\'s and caretaker\'s numbers, the exact address and the map pin '
+            'open for ${_settings.unlockHours} hours. Not part of your rent or deposit.',
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w500,
               color: KhejaColors.zinc500,
               height: 1.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The street and building, shown only once the listing is unlocked.
+class _ExactLocation extends StatelessWidget {
+  const _ExactLocation({this.address, this.building});
+
+  final String? address;
+  final String? building;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final lines = [
+      if (building?.trim().isNotEmpty ?? false) building!.trim(),
+      if (address?.trim().isNotEmpty ?? false) address!.trim(),
+    ];
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(KhejaRadius.lg),
+        border: Border.all(color: KhejaColors.blue.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.pin_drop_rounded, color: KhejaColors.blue),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('EXACT LOCATION', style: kEyebrowStyle.copyWith(color: KhejaColors.blue)),
+                const SizedBox(height: 4),
+                SelectableText(
+                  lines.join('\n'),
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, height: 1.4),
+                ),
+              ],
             ),
           ),
         ],

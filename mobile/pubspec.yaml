@@ -1,7 +1,7 @@
 name: kheja_link
 description: "Kheja_Link — find your next rental home in Meru, Kenya."
 publish_to: 'none'
-version: 1.5.0+9
+version: 1.6.0+10
 
 environment:
   sdk: ^3.9.0

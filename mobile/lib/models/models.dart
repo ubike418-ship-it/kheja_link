@@ -704,6 +704,9 @@ class KhejaNotification {
 class PropertyContact {
   const PropertyContact({
     required this.unlocked,
+    this.unlockedUntil,
+    this.addressLine,
+    this.buildingName,
     this.landlordName,
     this.phone,
     this.whatsapp,
@@ -716,6 +719,15 @@ class PropertyContact {
   });
 
   final bool unlocked;
+
+  /// When the paid window closes (3 hours after payment). Null when there is
+  /// no window: the owner, an admin, or a House Hunting pass.
+  final DateTime? unlockedUntil;
+
+  /// The exact location — part of what the unlock buys (0016).
+  final String? addressLine;
+  final String? buildingName;
+
   final String? landlordName;
   final String? phone;
   final String? whatsapp;
@@ -736,6 +748,9 @@ class PropertyContact {
 
   factory PropertyContact.fromMap(Map<String, dynamic> map) => PropertyContact(
         unlocked: map['unlocked'] == true,
+        unlockedUntil: _date(map['unlocked_until'])?.toLocal(),
+        addressLine: map['address_line'] as String?,
+        buildingName: map['building_name'] as String?,
         landlordName: map['landlord_name'] as String?,
         phone: map['contact_phone'] as String?,
         whatsapp: map['contact_whatsapp'] as String?,
@@ -1105,8 +1120,8 @@ class ListingDraft {
       ..description = p.description ?? ''
       ..propertyTypeId = p.propertyType?.id
       ..locationId = p.location?.id
-      ..addressLine = p.addressLine ?? ''
-      ..buildingName = p.buildingName ?? ''
+      ..addressLine = ''
+      ..buildingName = ''
       ..floorNumber = p.floorNumber
       ..nearby = p.nearby ?? ''
       ..priceAmount = p.priceAmount
@@ -1143,6 +1158,8 @@ class ListingDraft {
         ..contactWhatsapp = (private['contact_whatsapp'] as String?) ?? ''
         ..caretakerName = (private['caretaker_name'] as String?) ?? ''
         ..caretakerPhone = (private['caretaker_phone'] as String?) ?? ''
+        ..addressLine = (private['address_line'] as String?) ?? ''
+        ..buildingName = (private['building_name'] as String?) ?? ''
         ..latitude = private['latitude'] == null ? null : _num(private['latitude']).toDouble()
         ..longitude =
             private['longitude'] == null ? null : _num(private['longitude']).toDouble();
@@ -1166,17 +1183,21 @@ class BusinessSettings {
     this.contactUnlockFee = 500,
     this.contactUnlockCurrency = 'KES',
     this.houseRefundAmount = 200,
+    this.unlockHours = 3,
     this.landlordListingFee = 0,
     this.listingOfferLabel = 'Free Property Listing — Limited-Time Offer',
     this.listingOfferEndsOn,
   });
 
-  /// One price to unlock any listing, charged once per listing.
+  /// One price to unlock any listing. Paying opens it for [unlockHours].
   final num contactUnlockFee;
   final String contactUnlockCurrency;
 
   /// Refunded to a tenant who paid for an unlock and then gives us a house.
   final num houseRefundAmount;
+
+  /// How long a paid unlock stays open.
+  final int unlockHours;
 
   final num landlordListingFee;
   final String listingOfferLabel;
@@ -1193,6 +1214,7 @@ class BusinessSettings {
         'contact_unlock_fee': '$contactUnlockFee',
         'contact_unlock_currency': contactUnlockCurrency,
         'house_refund_amount': '$houseRefundAmount',
+        'contact_unlock_hours': '$unlockHours',
         'landlord_listing_fee': '$landlordListingFee',
         'landlord_listing_fee_offer_label': listingOfferLabel,
         'landlord_listing_fee_offer_ends_on':
@@ -1211,6 +1233,7 @@ class BusinessSettings {
       contactUnlockFee: n('contact_unlock_fee') ?? d.contactUnlockFee,
       contactUnlockCurrency: t('contact_unlock_currency') ?? d.contactUnlockCurrency,
       houseRefundAmount: n('house_refund_amount') ?? d.houseRefundAmount,
+      unlockHours: n('contact_unlock_hours')?.toInt() ?? d.unlockHours,
       landlordListingFee: n('landlord_listing_fee') ?? d.landlordListingFee,
       listingOfferLabel: t('landlord_listing_fee_offer_label') ?? d.listingOfferLabel,
       listingOfferEndsOn: DateTime.tryParse(t('landlord_listing_fee_offer_ends_on') ?? ''),

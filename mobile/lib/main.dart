@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -49,8 +50,9 @@ class KhejaApp extends StatelessWidget {
           theme: buildKhejaTheme(Brightness.light),
           darkTheme: buildKhejaTheme(Brightness.dark),
           // Light or dark only — never "system". You flip it by double-tapping
-          // the home header rather than hunting for a toggle icon.
+          // anywhere in the app rather than hunting for a toggle icon.
           themeMode: AppState.instance.themeMode,
+          builder: (context, child) => DoubleTapThemeToggle(child: child ?? const SizedBox()),
           home: startupError == null
               ? const SplashScreen()
               : _ConfigErrorScreen(message: startupError!),
@@ -101,6 +103,103 @@ class _ConfigErrorScreen extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Double-tap anywhere in the app to switch between light and dark.
+///
+/// Built on raw pointer events rather than a GestureDetector, so it never
+/// joins the gesture arena: buttons, lists and sheets respond exactly as fast
+/// as before, and a single tap is never delayed waiting to see if a second one
+/// follows. Two quick, short, nearby taps flip the theme. It stays out of the
+/// way while typing, where a double tap selects a word, and ignores drags and
+/// multi-finger touches.
+class DoubleTapThemeToggle extends StatefulWidget {
+  const DoubleTapThemeToggle({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<DoubleTapThemeToggle> createState() => _DoubleTapThemeToggleState();
+}
+
+class _DoubleTapThemeToggleState extends State<DoubleTapThemeToggle> {
+  static const _maxTapDuration = Duration(milliseconds: 250);
+  static const _maxGap = Duration(milliseconds: 320);
+  static const _maxSlop = 18.0;
+  static const _maxDistance = 48.0;
+
+  int _pointers = 0;
+  Offset? _downAt;
+  DateTime? _downTime;
+  Offset? _lastTapAt;
+  DateTime? _lastTapTime;
+
+  bool get _typing => FocusManager.instance.primaryFocus?.context?.widget is EditableText;
+
+  void _reset() {
+    _downAt = null;
+    _downTime = null;
+    _lastTapAt = null;
+    _lastTapTime = null;
+  }
+
+  void _onDown(PointerDownEvent e) {
+    _pointers++;
+    if (_pointers > 1) {
+      _reset();
+      return;
+    }
+    _downAt = e.position;
+    _downTime = DateTime.now();
+  }
+
+  void _onUp(PointerUpEvent e) {
+    _pointers = _pointers > 0 ? _pointers - 1 : 0;
+    final downAt = _downAt;
+    final downTime = _downTime;
+    _downAt = null;
+    _downTime = null;
+    if (downAt == null || downTime == null) return;
+
+    final now = DateTime.now();
+    final isTap = now.difference(downTime) <= _maxTapDuration &&
+        (e.position - downAt).distance <= _maxSlop;
+    if (!isTap || _typing) {
+      _lastTapAt = null;
+      _lastTapTime = null;
+      return;
+    }
+
+    final lastAt = _lastTapAt;
+    final lastTime = _lastTapTime;
+    if (lastAt != null &&
+        lastTime != null &&
+        now.difference(lastTime) <= _maxGap &&
+        (e.position - lastAt).distance <= _maxDistance) {
+      _reset();
+      HapticFeedback.selectionClick();
+      AppState.instance.toggleTheme();
+    } else {
+      _lastTapAt = e.position;
+      _lastTapTime = now;
+    }
+  }
+
+  void _onCancel(PointerCancelEvent e) {
+    _pointers = _pointers > 0 ? _pointers - 1 : 0;
+    _reset();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: _onDown,
+      onPointerUp: _onUp,
+      onPointerCancel: _onCancel,
+      child: widget.child,
     );
   }
 }

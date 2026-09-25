@@ -11,7 +11,13 @@ import {
   settingSchema,
 } from "@/lib/validation";
 import type { ActionResult } from "@/lib/types";
-import type { ApprovalStatus, InquiryStatus, WaitlistStatus } from "@/lib/supabase/database.types";
+import type {
+  ApprovalStatus,
+  InquiryStatus,
+  PropertyStatus,
+  UserRole,
+  WaitlistStatus,
+} from "@/lib/supabase/database.types";
 
 /**
  * Admin writes. Every table touched here is admin-only under Row Level
@@ -465,4 +471,90 @@ export async function markRefundPaidAction(
 
   revalidatePath("/admin/refunds");
   return { ok: true, data: undefined, message: "Marked paid. The tenant has been told in the app." };
+}
+
+// -----------------------------------------------------------------------------
+// Accounts
+// -----------------------------------------------------------------------------
+
+const ROLES = new Set<UserRole>(["seeker", "landlord", "admin"]);
+
+export async function setUserRoleAction(userId: string, role: string): Promise<ActionResult> {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+  if (!ROLES.has(role as UserRole)) return { ok: false, error: "Unknown role." };
+
+  // Nobody locks themselves out of the back office by accident.
+  const me = await getCurrentProfile();
+  if (me?.id === userId && role !== "admin") {
+    return { ok: false, error: "You cannot remove your own admin access. Ask another admin." };
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ role: role as UserRole })
+    .eq("id", userId)
+    .select("id");
+  if (error || !data?.length) return { ok: false, error: "Could not change that account." };
+
+  revalidatePath("/admin/users");
+  return { ok: true, data: undefined, message: "Role updated." };
+}
+
+export async function setUserVerifiedAction(userId: string, verified: boolean): Promise<ActionResult> {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ is_verified: verified })
+    .eq("id", userId)
+    .select("id");
+  if (error || !data?.length) return { ok: false, error: "Could not change that account." };
+
+  revalidatePath("/admin/users");
+  return { ok: true, data: undefined, message: verified ? "Verified badge added." : "Verified badge removed." };
+}
+
+// -----------------------------------------------------------------------------
+// Listings
+// -----------------------------------------------------------------------------
+
+const LISTING_STATUSES = new Set<PropertyStatus>(["draft", "pending", "published", "rented", "archived"]);
+
+export async function setListingStatusAction(propertyId: string, status: string): Promise<ActionResult> {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+  if (!LISTING_STATUSES.has(status as PropertyStatus)) return { ok: false, error: "Unknown status." };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("properties")
+    .update({ status: status as PropertyStatus })
+    .eq("id", propertyId)
+    .select("slug");
+  if (error || !data?.length) return { ok: false, error: "Could not change that listing." };
+
+  revalidatePath("/admin/listings");
+  revalidatePath("/properties");
+  revalidatePath(`/properties/${data[0].slug}`);
+  return { ok: true, data: undefined, message: "Listing updated." };
+}
+
+export async function setListingPremiumAction(propertyId: string, premium: boolean): Promise<ActionResult> {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("properties")
+    .update({ is_premium: premium })
+    .eq("id", propertyId)
+    .select("id");
+  if (error || !data?.length) return { ok: false, error: "Could not change that listing." };
+
+  revalidatePath("/admin/listings");
+  return { ok: true, data: undefined, message: premium ? "Marked premium." : "Premium removed." };
 }

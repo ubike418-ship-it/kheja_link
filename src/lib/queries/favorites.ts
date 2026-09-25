@@ -36,7 +36,7 @@ export async function getFavoriteProperties(): Promise<PropertyListItem[]> {
       `
       created_at,
       property:properties (
-        id, owner_id, title, slug, description, property_type_id, location_id, address_line, price_amount, price_currency, price_period, deposit_months, bedrooms, bathrooms, size_sqft, is_premium, is_furnished, status, available_from, view_count, published_at, created_at, updated_at, like_count, house_rules,
+        id, owner_id, title, slug, description, property_type_id, location_id, nearby, price_amount, price_currency, price_period, deposit_months, bedrooms, bathrooms, size_sqft, is_premium, is_furnished, status, available_from, view_count, published_at, created_at, updated_at, like_count, house_rules,
         property_type:property_types ( id, slug, name, icon ),
         location:locations ( id, slug, name, area, county, latitude, longitude ),
         images:property_images ( id, public_url, alt_text, is_cover, sort_order )

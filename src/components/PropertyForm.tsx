@@ -128,11 +128,21 @@ export default function PropertyForm({
           </Field>
         </div>
 
-        <Field label="Street / estate (optional)" error={err("addressLine")}>
+        <Field label="Describe the location — shown to everyone" error={err("locationDescription")}>
+          <textarea
+            name="locationDescription"
+            rows={3}
+            defaultValue={property?.nearby ?? ""}
+            placeholder="e.g. Quiet estate 5 minutes' walk from Makutano stage, near Kinoru stadium, schools and the market. Tarmac to the gate."
+            className={`${inputClass} h-auto py-4 resize-none`}
+          />
+        </Field>
+
+        <Field label="Exact street / estate — only for tenants who unlock" error={err("addressLine")}>
           <input
             name="addressLine"
             defaultValue={property?.address_line ?? ""}
-            placeholder="e.g. Off Meru–Maua Road, Makutano"
+            placeholder="e.g. Off Meru–Maua Road, plot 42, green gate"
             className={inputClass}
           />
         </Field>

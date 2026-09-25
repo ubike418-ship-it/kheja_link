@@ -8,10 +8,12 @@ import type {
 } from "@/lib/types";
 
 /** Columns a property card needs, joined in one round-trip. */
-// Explicit, because contact_phone, contact_whatsapp, latitude and longitude are
-// revoked from the API roles — they sit behind the paid contact unlock and come
-// back only through get_property_contact(). `select=*` would be denied outright.
-const PROPERTY_COLUMNS = "id, owner_id, title, slug, description, property_type_id, location_id, address_line, price_amount, price_currency, price_period, deposit_months, bedrooms, bathrooms, size_sqft, is_premium, is_furnished, status, available_from, view_count, published_at, created_at, updated_at, like_count, house_rules, availability, notice_date";
+// Explicit, because the contact numbers and the exact location (street,
+// building, map pin) are revoked from the API roles — they sit behind the paid
+// contact unlock and come back only through get_property_contact(). `select=*`
+// would be denied outright. `nearby` is the landlord's public description of
+// the location.
+const PROPERTY_COLUMNS = "id, owner_id, title, slug, description, property_type_id, location_id, nearby, price_amount, price_currency, price_period, deposit_months, bedrooms, bathrooms, size_sqft, is_premium, is_furnished, status, available_from, view_count, published_at, created_at, updated_at, like_count, house_rules, availability, notice_date";
 
 const LIST_SELECT = `
   ${PROPERTY_COLUMNS},
@@ -270,12 +272,14 @@ export async function getMyPropertyById(
   const privateFields = (Array.isArray(privateRows) ? privateRows[0] : null) as {
     contact_phone: string | null;
     contact_whatsapp: string | null;
+    address_line: string | null;
   } | null;
 
   return {
     ...normalised,
     contact_phone: privateFields?.contact_phone ?? null,
     contact_whatsapp: privateFields?.contact_whatsapp ?? null,
+    address_line: privateFields?.address_line ?? null,
     amenity_ids: (raw.property_amenities ?? []).map((a) => a.amenity_id),
   };
 }

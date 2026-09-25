@@ -173,7 +173,7 @@ export default async function PropertyDetailPage({ params }: { params: Params })
               <div className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400">
                 <MapPin className="w-5 h-5 text-blue-500 shrink-0" />
                 <span className="font-bold">
-                  {property.address_line ?? formatLocation(property.location)}
+                  {formatLocation(property.location)}
                 </span>
               </div>
             </div>
@@ -269,15 +269,17 @@ export default async function PropertyDetailPage({ params }: { params: Params })
                       </p>
                     </div>
                   </div>
-                  {property.location?.latitude && property.location?.longitude && (
-                    <a
-                      href={`https://www.google.com/maps/search/?api=1&query=${property.location.latitude},${property.location.longitude}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 text-sm font-black text-blue-600 hover:text-blue-700 transition-colors"
-                    >
-                      Open in Google Maps
-                    </a>
+                  {property.nearby && (
+                    <p className="text-base font-medium text-zinc-600 dark:text-zinc-300 leading-relaxed whitespace-pre-line">
+                      {property.nearby}
+                    </p>
+                  )}
+                  {!isOwner && (
+                    <p className="flex items-start gap-2 p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 text-sm font-bold text-zinc-500">
+                      <Lock className="w-4 h-4 mt-0.5 shrink-0 text-blue-600" />
+                      The exact street, building and Google Maps pin open with the landlord&apos;s
+                      contact when you tap &ldquo;Unlock contact&rdquo; in the app.
+                    </p>
                   )}
                 </div>
               </section>
@@ -342,11 +344,12 @@ export default async function PropertyDetailPage({ params }: { params: Params })
                   {/* No price here on purpose: the amount first appears on the payment
                       screen in the app, after the tenant taps "Unlock contact". */}
                   <p className="text-2xl font-black tracking-tighter">
-                    Get the landlord&apos;s and caretaker&apos;s numbers and the exact location.
+                    Get the landlord&apos;s and caretaker&apos;s numbers, the exact address and the
+                    map pin.
                   </p>
                   <p className="text-sm font-medium text-blue-50 leading-relaxed">
-                    Tap &ldquo;Unlock contact&rdquo; on this home in the Kheja_Link app. Unlock once
-                    and the details stay yours.
+                    Tap &ldquo;Unlock contact&rdquo; on this home in the Kheja_Link app. The
+                    contacts, exact address and map pin stay open for 3 hours.
                   </p>
                   <Link
                     href="/#get-the-app"

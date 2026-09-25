@@ -16,6 +16,7 @@ import '../widgets/property_card.dart';
 import '../widgets/states.dart';
 import 'airbnb_soon_screen.dart';
 import 'alert_sheet.dart';
+import '../widgets/partner_rails.dart';
 import 'hunting_screen.dart';
 import 'my_requests_screen.dart';
 import 'notification_preferences_screen.dart';
@@ -80,6 +81,10 @@ class _HomeScreenState extends State<HomeScreen> {
   final _searchKey = GlobalKey();
   final _listKey = GlobalKey();
   final _firstCardKey = GlobalKey();
+  final _moveMateKey = GlobalKey();
+
+  /// MoveMate Kenya, our moving partner — on the home screen and in the tour.
+  Partner? _moveMate;
 
   bool _touring = false;
   int _seenTutorialRequest = AppState.instance.tutorialRequest;
@@ -119,12 +124,16 @@ class _HomeScreenState extends State<HomeScreen> {
       khejaApi.fetchBusinessSettings(),
       khejaApi.fetchHuntingService().catchError((_) => HuntingService.none),
       khejaApi.fetchUnlockedPropertyIds(),
+      khejaApi.fetchPartners().catchError((_) => <Partner>[]),
     ]);
     if (!mounted) return;
     setState(() {
       _settings = results[0] as BusinessSettings;
       _hunting = results[1] as HuntingService;
       _hasPaidUnlock = (results[2] as Set<String>).isNotEmpty;
+      _moveMate = (results[3] as List<Partner>)
+          .where((p) => p.slug == 'movemate-kenya')
+          .firstOrNull;
     });
   }
 
@@ -189,6 +198,15 @@ class _HomeScreenState extends State<HomeScreen> {
           body: 'Tap any home for its photos, videos, description, location, rent, type, '
               'amenities and availability. Tap the heart to save it — if it is occupied, '
               'ask to be notified when it frees up.',
+        ),
+        CoachStep(
+          target: _moveMateKey,
+          icon: Icons.local_shipping_rounded,
+          color: const Color(0xFF2F8F2F),
+          title: 'Moving? Meet MoveMate Kenya',
+          body: 'MoveMate Kenya is our moving partner. Once you have found your home, they '
+              'pack, load and move you anywhere in Meru and beyond. Tap the card to call '
+              'them — their price is agreed with them directly.',
         ),
       ],
     );
@@ -283,13 +301,9 @@ class _HomeScreenState extends State<HomeScreen> {
             SliverAppBar(
               floating: true,
               titleSpacing: 20,
-              // Double tap the brand to flip light/dark. No toggle icon: it
-              // cluttered the bar for something people change twice a year.
-              title: GestureDetector(
-                onDoubleTap: AppState.instance.toggleTheme,
-                behavior: HitTestBehavior.opaque,
-                child: const BrandLockup(size: 34, fontSize: 20),
-              ),
+              // Light/dark flips with a double tap anywhere in the app (see
+              // DoubleTapThemeToggle in main.dart) — no toggle icon needed.
+              title: const BrandLockup(size: 34, fontSize: 20),
               actions: [
                 IconButton(
                   onPressed: () => _openSearch(),
@@ -336,6 +350,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       onPreferences: () => khejaApi.isSignedIn
                           ? _push(const NotificationPreferencesScreen())
                           : _push(const MyRequestsScreen()),
+                    ),
+                    const SizedBox(height: 16),
+                    KeyedSubtree(
+                      key: _moveMateKey,
+                      child: MoveMateSpotlight(partner: _moveMate),
                     ),
                   ],
                 ),

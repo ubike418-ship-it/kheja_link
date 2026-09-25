@@ -226,9 +226,8 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
               physics: const AlwaysScrollableScrollPhysics(),
               children: [
-                // Double tap anywhere on the header to flip light/dark.
+                // Light/dark flips with a double tap anywhere in the app.
                 GestureDetector(
-                  onDoubleTap: AppState.instance.toggleTheme,
                   behavior: HitTestBehavior.opaque,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 10),

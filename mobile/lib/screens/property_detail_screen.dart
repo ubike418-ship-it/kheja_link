@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../config/theme.dart';
 import '../main.dart';
@@ -119,13 +118,6 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     } catch (error) {
       if (!mounted) return;
       showKhejaSnack(context, describeError(error), isError: true);
-    }
-  }
-
-  Future<void> _launch(Uri uri, String failureMessage) async {
-    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!ok && mounted) {
-      showKhejaSnack(context, failureMessage, isError: true);
     }
   }
 
@@ -266,7 +258,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
-                          property.addressLine ?? property.locationLabel,
+                          property.locationLabel,
                           style: const TextStyle(
                             fontWeight: FontWeight.w800,
                             color: KhejaColors.zinc500,
@@ -333,8 +325,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                   const SizedBox(height: 34),
                   _LocationCard(
                     property: property,
-                    onOpenMap: (uri) =>
-                        _launch(uri, 'Could not open Maps on this device.'),
+                    unlocked: _contact.unlocked,
                   ),
 
                   const SizedBox(height: 34),
@@ -771,17 +762,18 @@ class _AmenityChip extends StatelessWidget {
 }
 
 class _LocationCard extends StatelessWidget {
-  const _LocationCard({required this.property, required this.onOpenMap});
+  const _LocationCard({required this.property, required this.unlocked});
 
   final Property property;
-  final void Function(Uri) onOpenMap;
+
+  /// The exact address and map pin are shown in the contact card once paid.
+  final bool unlocked;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final location = property.location;
-    final lat = location?.latitude;
-    final lng = location?.longitude;
+    final description = property.nearby?.trim();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -832,18 +824,46 @@ class _LocationCard extends StatelessWidget {
                   ),
                 ],
               ),
-              if (lat != null && lng != null) ...[
-                const SizedBox(height: 16),
-                TextButton.icon(
-                  onPressed: () => onOpenMap(
-                    Uri.parse(
-                        'https://www.google.com/maps/search/?api=1&query=$lat,$lng'),
-                  ),
-                  icon: const Icon(Icons.map_rounded, size: 18),
-                  label: const Text('Open in Google Maps'),
-                  style: TextButton.styleFrom(padding: EdgeInsets.zero),
+              if (description != null && description.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                Text(
+                  description,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, height: 1.5),
                 ),
               ],
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: (unlocked ? KhejaColors.emerald : KhejaColors.blue).withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(KhejaRadius.md),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      unlocked ? Icons.lock_open_rounded : Icons.lock_rounded,
+                      size: 16,
+                      color: unlocked ? KhejaColors.emerald : KhejaColors.blue,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        unlocked
+                            ? 'The exact address and Google Maps pin are in the contact card below.'
+                            : 'The exact address, building and Google Maps pin open with the '
+                                'landlord\'s contact when you tap Unlock contact.',
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: KhejaColors.zinc500,
+                          height: 1.45,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -1294,15 +1314,7 @@ class _ListingDetails extends StatelessWidget {
     final p = property;
 
     final rows = <({IconData icon, String label, String value})>[
-      if (p.buildingName != null && p.buildingName!.trim().isNotEmpty)
-        (
-          icon: Icons.apartment_rounded,
-          label: 'Building',
-          value: p.floorNumber == null
-              ? p.buildingName!
-              : '${p.buildingName!}, floor ${p.floorNumber}'
-        )
-      else if (p.floorNumber != null)
+      if (p.floorNumber != null)
         (icon: Icons.stairs_rounded, label: 'Floor', value: '${p.floorNumber}'),
       if (p.waterLabel != null)
         (
@@ -1340,8 +1352,6 @@ class _ListingDetails extends StatelessWidget {
       ),
       if (p.securityDetails?.trim().isNotEmpty ?? false)
         (icon: Icons.shield_rounded, label: 'Security', value: p.securityDetails!),
-      if (p.nearby?.trim().isNotEmpty ?? false)
-        (icon: Icons.near_me_rounded, label: 'Nearby', value: p.nearby!),
     ];
 
     final features = <String>[

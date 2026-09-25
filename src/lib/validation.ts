@@ -64,6 +64,12 @@ export const propertySchema = z.object({
   propertyTypeId: z.string().uuid("Choose a property type"),
   locationId: z.string().uuid("Choose a location"),
   addressLine: z.string().trim().max(200).optional().or(z.literal("")),
+  locationDescription: z
+    .string()
+    .trim()
+    .max(600, "Keep the location description under 600 characters")
+    .optional()
+    .or(z.literal("")),
   priceAmount: z.coerce
     .number()
     .positive("Rent must be greater than zero")

@@ -17,11 +17,13 @@ class KhejaApi {
 
   final SupabaseClient _client;
 
-  /// Explicit, because contact_phone, contact_whatsapp, latitude and longitude
-  /// are revoked from the API roles — they sit behind the paid contact unlock
-  /// and come back only through get_property_contact(). '*' would be denied.
+  /// Explicit, because the contact numbers and the exact location (street,
+  /// building, map pin) are revoked from the API roles — they sit behind the
+  /// paid contact unlock and come back only through get_property_contact().
+  /// '*' would be denied. `nearby` is the landlord's public description of the
+  /// location.
   static const _propertyColumns =
-      'id, owner_id, title, slug, description, property_type_id, location_id, address_line, price_amount, price_currency, price_period, deposit_months, bedrooms, bathrooms, size_sqft, is_premium, is_furnished, status, available_from, view_count, published_at, created_at, updated_at, like_count, house_rules, building_name, floor_number, service_charge, water_billing, water_notes, electricity_billing, parking_spaces, pets_allowed, min_lease_months, notice_months, nearby, security_details, internet_ready, is_gated, has_balcony, availability, notice_date';
+      'id, owner_id, title, slug, description, property_type_id, location_id, price_amount, price_currency, price_period, deposit_months, bedrooms, bathrooms, size_sqft, is_premium, is_furnished, status, available_from, view_count, published_at, created_at, updated_at, like_count, house_rules, floor_number, service_charge, water_billing, water_notes, electricity_billing, parking_spaces, pets_allowed, min_lease_months, notice_months, nearby, security_details, internet_ready, is_gated, has_balcony, availability, notice_date';
 
   static const _listSelect = '''
     $_propertyColumns,

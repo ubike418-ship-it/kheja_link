@@ -2,9 +2,23 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Truck, Moon, SlidersHorizontal, MessageSquare, HandCoins } from "lucide-react";
+import {
+  Truck,
+  Moon,
+  SlidersHorizontal,
+  MessageSquare,
+  HandCoins,
+  LayoutDashboard,
+  Users,
+  Home,
+  Wallet,
+} from "lucide-react";
 
 const tabs = [
+  { href: "/admin", label: "Overview", icon: LayoutDashboard, exact: true },
+  { href: "/admin/users", label: "Users", icon: Users },
+  { href: "/admin/listings", label: "Listings", icon: Home },
+  { href: "/admin/payments", label: "Payments", icon: Wallet },
   { href: "/admin/messages", label: "Messages", icon: MessageSquare },
   { href: "/admin/refunds", label: "Houses & refunds", icon: HandCoins },
   { href: "/admin/providers", label: "Service providers", icon: Truck },
@@ -25,7 +39,7 @@ export default function AdminNav() {
       </div>
       <nav className="flex items-center gap-2 p-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[2rem] overflow-x-auto scrollbar-hide">
         {tabs.map((tab) => {
-          const active = pathname.startsWith(tab.href);
+          const active = "exact" in tab ? pathname === tab.href : pathname.startsWith(tab.href);
           return (
             <Link
               key={tab.href}

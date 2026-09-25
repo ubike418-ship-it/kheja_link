@@ -155,35 +155,6 @@ export async function paystack<T>(
   }
 }
 
-/** Records what we asked Paystack for, so a stuck payment can be explained. */
-export async function logAttempt(
-  admin: SupabaseClient | null,
-  row: {
-    reference: string;
-    product: Product;
-    channel: "mobile_money" | "card" | "checkout";
-    status: string;
-    displayText?: string | null;
-    message?: string | null;
-  },
-) {
-  if (!admin) return;
-  await admin
-    .from("payment_attempts")
-    .insert({
-      reference: row.reference,
-      product: row.product,
-      channel: row.channel,
-      status: row.status,
-      display_text: row.displayText ?? null,
-      message: row.message ?? null,
-    })
-    .then(
-      () => undefined,
-      () => undefined, // logging must never break a payment
-    );
-}
-
 export type VerifiedTransaction = {
   status: string;
   amount: number;

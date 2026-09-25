@@ -403,8 +403,16 @@ class _ListingEditorScreenState extends State<ListingEditorScreen> {
                     onChanged: (v) => setState(() => _draft.locationId = v),
                   ),
                   _text(
-                    label: 'Street or estate',
-                    hint: 'e.g. Off Meru-Maua Road, near the stage',
+                    label: 'Describe the location — everyone sees this',
+                    hint: 'e.g. Quiet estate 5 minutes\' walk from Makutano stage, near '
+                        'the market and schools. Tarmac to the gate.',
+                    initial: _draft.nearby,
+                    maxLines: 3,
+                    onSaved: (v) => _draft.nearby = v,
+                  ),
+                  _text(
+                    label: 'Exact street or estate — only tenants who unlock',
+                    hint: 'e.g. Off Meru-Maua Road, plot 42, green gate',
                     initial: _draft.addressLine,
                     onSaved: (v) => _draft.addressLine = v,
                   ),
@@ -412,7 +420,7 @@ class _ListingEditorScreenState extends State<ListingEditorScreen> {
                     children: [
                       Expanded(
                         child: _text(
-                          label: 'Building name',
+                          label: 'Building name (private)',
                           hint: 'e.g. Summit Heights',
                           initial: _draft.buildingName,
                           onSaved: (v) => _draft.buildingName = v,
@@ -439,13 +447,6 @@ class _ListingEditorScreenState extends State<ListingEditorScreen> {
                     validator: (v) => v.trim().isNotEmpty && v.trim().length < 30
                         ? 'Write at least 30 characters so tenants know what to expect'
                         : null,
-                  ),
-                  _text(
-                    label: 'What is nearby',
-                    hint: 'Matatu stage, schools, market, hospital, church…',
-                    initial: _draft.nearby,
-                    maxLines: 3,
-                    onSaved: (v) => _draft.nearby = v,
                   ),
                 ],
               ),
@@ -699,8 +700,8 @@ class _ListingEditorScreenState extends State<ListingEditorScreen> {
             _Section(
               icon: Icons.push_pin_rounded,
               title: 'Exact location',
-              subtitle: 'Stand at the house and tap the button. Only tenants who '
-                  'unlock the listing see this pin.',
+              subtitle: 'Stand at the house and tap the button so tenants find it on '
+                  'Google Maps. Only tenants who unlock the listing see this pin.',
               child: _locationSection(),
             ),
           ],

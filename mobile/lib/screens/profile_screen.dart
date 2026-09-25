@@ -239,6 +239,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: 28),
 
+          // The back office lives on the website; admins get a door to it.
+          if (profile.role == 'admin') ...[
+            Text('Kheja_Link admin', style: theme.textTheme.titleLarge),
+            const SizedBox(height: 14),
+            _Tile(
+              icon: Icons.admin_panel_settings_rounded,
+              label: 'Admin dashboard',
+              subtitle: 'Payments, users, listings, messages and refunds',
+              onTap: () async {
+                final ok = await launchUrl(
+                  Uri.parse('${SupabaseConfig.siteUrl}/admin'),
+                  mode: LaunchMode.externalApplication,
+                );
+                if (!ok && context.mounted) {
+                  showKhejaSnack(context, 'Could not open the browser.', isError: true);
+                }
+              },
+            ),
+            const SizedBox(height: 28),
+          ],
+
           if (profile.isLandlord) ...[
             Text('Landlord', style: theme.textTheme.titleLarge),
             const SizedBox(height: 14),

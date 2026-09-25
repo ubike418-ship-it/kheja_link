@@ -157,3 +157,92 @@ export function RefundPaidForm({ refundId, amountLabel }: { refundId: string; am
     </form>
   );
 }
+
+/**
+ * A dropdown that saves itself: `action` is a server action already bound to
+ * the row it changes (e.g. setUserRoleAction.bind(null, id)).
+ */
+export function ActionSelect({
+  value,
+  options,
+  action,
+  label,
+  confirm,
+}: {
+  value: string;
+  options: { value: string; label: string }[];
+  action: (next: string) => Promise<ActionResult>;
+  label: string;
+  /** Asked before saving one particular value, e.g. before making someone an admin. */
+  confirm?: { value: string; message: string };
+}) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+
+  return (
+    <select
+      value={value}
+      disabled={pending}
+      aria-label={label}
+      onChange={(e) => {
+        const next = e.target.value;
+        if (confirm && next === confirm.value && !window.confirm(confirm.message)) return;
+        start(async () => {
+          const result = await action(next);
+          if (result.ok) {
+            toast.success(result.message ?? "Saved.");
+            router.refresh();
+          } else {
+            toast.error(result.error);
+          }
+        });
+      }}
+      className="h-10 pl-3 pr-8 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-xs font-black text-zinc-600 dark:text-zinc-300 outline-none focus:border-blue-500 disabled:opacity-60"
+    >
+      {options.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/** An on/off pill that saves itself. */
+export function ActionToggle({
+  on,
+  action,
+  labels,
+}: {
+  on: boolean;
+  action: (next: boolean) => Promise<ActionResult>;
+  labels: [on: string, off: string];
+}) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+
+  return (
+    <button
+      type="button"
+      disabled={pending}
+      onClick={() =>
+        start(async () => {
+          const result = await action(!on);
+          if (result.ok) {
+            toast.success(result.message ?? "Saved.");
+            router.refresh();
+          } else {
+            toast.error(result.error);
+          }
+        })
+      }
+      className={`h-10 px-4 rounded-2xl text-xs font-black transition-colors disabled:opacity-60 ${
+        on
+          ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300"
+          : "bg-zinc-100 dark:bg-zinc-800 text-zinc-500"
+      }`}
+    >
+      {pending ? <Loader2 className="w-4 h-4 animate-spin" /> : on ? labels[0] : labels[1]}
+    </button>
+  );
+}
