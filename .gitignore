@@ -44,3 +44,6 @@ next-env.d.ts
 
 # original design archive (kept locally as a backup, not tracked)
 Animated-House-Hunt-codebase.zip
+
+# Play Store submission kit (holds the reviewer login) and graphics
+/store/
