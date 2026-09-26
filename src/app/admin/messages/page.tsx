@@ -91,6 +91,7 @@ export default async function AdminMessagesPage({ searchParams }: { searchParams
                 <div className="min-w-0 space-y-1">
                   <p className="flex items-center gap-2 text-lg font-black text-zinc-900 dark:text-white">
                     <span className="truncate">{r.name}</span>
+                    {r.message.startsWith("REPORT:") && <Badge tone="red">Report</Badge>}
                     {r.status === "new" && <Badge tone="blue">New</Badge>}
                   </p>
                   <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">

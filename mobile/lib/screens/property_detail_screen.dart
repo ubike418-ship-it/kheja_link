@@ -348,6 +348,15 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                       label: const Text('Message Kheja_Link'),
                     ),
                   ),
+                  if (!_isOwner(property))
+                    Center(
+                      child: TextButton.icon(
+                        onPressed: () => _openInquiry(property, report: true),
+                        style: TextButton.styleFrom(foregroundColor: KhejaColors.zinc500),
+                        icon: const Icon(Icons.flag_outlined, size: 18),
+                        label: const Text('Report this listing'),
+                      ),
+                    ),
 
                   const SizedBox(height: 20),
                   if (_isOwner(property))
@@ -406,19 +415,21 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     );
   }
 
-  Future<void> _openInquiry(Property property) async {
+  Future<void> _openInquiry(Property property, {bool report = false}) async {
     final sent = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => InquirySheet(property: property),
+      builder: (_) => InquirySheet(property: property, isReport: report),
     );
     if (sent == true && mounted) {
       showKhejaSnack(
         context,
-        khejaApi.isSignedIn
-            ? 'Message sent. Our reply will appear in your Inbox.'
-            : 'Message sent. Kheja_Link will call you back.',
+        report
+            ? 'Thank you. Our team will review this listing.'
+            : khejaApi.isSignedIn
+                ? 'Message sent. Our reply will appear in your Inbox.'
+                : 'Message sent. Kheja_Link will call you back.',
       );
     }
   }

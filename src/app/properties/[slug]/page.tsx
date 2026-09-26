@@ -61,8 +61,15 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   };
 }
 
-export default async function PropertyDetailPage({ params }: { params: Params }) {
+export default async function PropertyDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Params;
+  searchParams: Promise<{ report?: string }>;
+}) {
   const { slug } = await params;
+  const reporting = (await searchParams).report === "1";
 
   const [property, profile, user] = await Promise.all([
     getPropertyBySlug(slug).catch(() => null),
@@ -361,12 +368,26 @@ export default async function PropertyDetailPage({ params }: { params: Params })
               )}
 
               <InquiryForm
+                key={reporting ? "report" : "message"}
                 propertyId={property.id}
                 propertyTitle={property.title}
+                report={reporting}
                 defaultName={profile?.full_name}
                 defaultEmail={user?.email}
                 defaultPhone={profile?.phone}
               />
+
+              {!isOwner && (
+                <p className="text-center">
+                  <Link
+                    href={reporting ? `/properties/${property.slug}#contact` : `/properties/${property.slug}?report=1#contact`}
+                    scroll={false}
+                    className="text-xs font-black text-zinc-400 hover:text-red-600"
+                  >
+                    {reporting ? "Ask a question instead" : "Report this listing"}
+                  </Link>
+                </p>
+              )}
 
               <p className="px-4 text-xs font-medium text-zinc-400 leading-relaxed text-center">
                 Never send a deposit before viewing a house in person. Read our{" "}

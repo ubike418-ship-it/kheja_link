@@ -10,6 +10,8 @@ import type { ActionResult } from "@/lib/types";
 type Props = {
   propertyId: string;
   propertyTitle: string;
+  /** Reporting the listing to the Kheja_Link team rather than asking about it. */
+  report?: boolean;
   defaultName?: string | null;
   defaultEmail?: string | null;
   defaultPhone?: string | null;
@@ -18,6 +20,7 @@ type Props = {
 export default function InquiryForm({
   propertyId,
   propertyTitle,
+  report = false,
   defaultName,
   defaultEmail,
   defaultPhone,
@@ -63,11 +66,12 @@ export default function InquiryForm({
 
       <div className="space-y-1">
         <h3 className="text-xl font-black text-zinc-900 dark:text-white tracking-tight">
-          Message Kheja_Link
+          {report ? "Report this listing" : "Message Kheja_Link"}
         </h3>
         <p className="text-sm font-medium text-zinc-500">
-          Questions about this home come to our team, not the landlord. Sign in to get our reply
-          in your in-app Inbox.
+          {report
+            ? "Fake, misleading, offensive, already let or a scam? Tell us what is wrong. Our team reviews every report; the landlord is not told who reported it."
+            : "Questions about this home come to our team, not the landlord. Sign in to get our reply in your in-app Inbox."}
         </p>
       </div>
 
@@ -107,7 +111,11 @@ export default function InquiryForm({
           name="message"
           required
           rows={4}
-          defaultValue={`Hi, I'm interested in "${propertyTitle}". Is it still available?`}
+          defaultValue={
+            report
+              ? `REPORT: I want to report the listing "${propertyTitle}" because `
+              : `Hi, I'm interested in "${propertyTitle}". Is it still available?`
+          }
           className="w-full p-5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-medium text-zinc-900 dark:text-white outline-none focus:border-blue-500 transition-colors resize-none"
         />
       </Field>

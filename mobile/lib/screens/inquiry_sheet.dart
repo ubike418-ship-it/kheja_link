@@ -11,10 +11,16 @@ import '../widgets/states.dart';
 /// the sender's Inbox. No account required — the database allows an anonymous
 /// insert into `inquiries` but never an anonymous read, so the details entered
 /// here are only ever visible to Kheja_Link and the sender.
+///
+/// With [isReport], the same sheet reports a listing (fake, misleading,
+/// offensive, already let, a scam) to the Kheja_Link team, who can take it
+/// down from the back office — the in-app reporting Google Play requires for
+/// user-generated content.
 class InquirySheet extends StatefulWidget {
-  const InquirySheet({super.key, required this.property});
+  const InquirySheet({super.key, required this.property, this.isReport = false});
 
   final Property property;
+  final bool isReport;
 
   @override
   State<InquirySheet> createState() => _InquirySheetState();
@@ -41,8 +47,10 @@ class _InquirySheetState extends State<InquirySheet> {
       text: (user?.userMetadata?['phone'] as String?) ?? '',
     );
     _message = TextEditingController(
-      text: 'Hi, I\'m interested in "${widget.property.title}". '
-          'Is it still available?',
+      text: widget.isReport
+          ? 'REPORT: I want to report the listing "${widget.property.title}" because '
+          : 'Hi, I\'m interested in "${widget.property.title}". '
+              'Is it still available?',
     );
   }
 
@@ -122,12 +130,17 @@ class _InquirySheetState extends State<InquirySheet> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Message Kheja_Link',
+                      Text(widget.isReport ? 'Report this listing' : 'Message Kheja_Link',
                           style: theme.textTheme.headlineSmall),
                       const SizedBox(height: 8),
-                      const Text(
-                        'Questions about this home come to our team, not the landlord. '
-                        'Signed in? Our reply lands in your Inbox.',
+                      Text(
+                        widget.isReport
+                            ? 'Fake, misleading, offensive, already let or a scam? Tell us '
+                                'what is wrong. Our team reviews every report and takes '
+                                'listings down that break our rules. The landlord is not told '
+                                'who reported it.'
+                            : 'Questions about this home come to our team, not the landlord. '
+                                'Signed in? Our reply lands in your Inbox.',
                         style: TextStyle(
                           color: KhejaColors.zinc500,
                           fontWeight: FontWeight.w600,
