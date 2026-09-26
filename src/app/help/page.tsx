@@ -4,6 +4,8 @@ import { LifeBuoy, ShieldCheck, Mail, Phone, MapPin } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { getCurrentProfile } from "@/lib/supabase/server";
+import { SOCIAL } from "@/lib/social";
+import { TikTokIcon, WhatsAppIcon } from "@/components/SocialIcons";
 
 export const dynamic = "force-dynamic";
 
@@ -144,6 +146,28 @@ export default async function HelpPage() {
                   <Phone className="w-5 h-5 text-emerald-600" />
                 </span>
                 <span className="font-bold">+254 710 655 709</span>
+              </a>
+              <a
+                href={SOCIAL.whatsapp.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-4 text-zinc-600 dark:text-zinc-400 hover:text-[#1da851] transition-colors"
+              >
+                <span className="w-11 h-11 rounded-2xl bg-[#25D366]/10 flex items-center justify-center">
+                  <WhatsAppIcon className="w-5 h-5 text-[#1da851]" />
+                </span>
+                <span className="font-bold">WhatsApp {SOCIAL.whatsapp.number}</span>
+              </a>
+              <a
+                href={SOCIAL.tiktok.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-4 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors"
+              >
+                <span className="w-11 h-11 rounded-2xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
+                  <TikTokIcon className="w-5 h-5 text-zinc-900 dark:text-white" />
+                </span>
+                <span className="font-bold">TikTok {SOCIAL.tiktok.handle}</span>
               </a>
               <div className="flex items-center gap-4 text-zinc-600 dark:text-zinc-400">
                 <span className="w-11 h-11 rounded-2xl bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center">

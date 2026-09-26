@@ -535,6 +535,8 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
         `You can reach the Kheja_Link team at:\n\n` +
         `• **Email** — hello@khejalink.name.ng\n` +
         `• **Phone** — +254 710 655 709\n` +
+        `• **WhatsApp** — +254 710 655709 (wa.me/254710655709)\n` +
+        `• **TikTok** — @kheja_link\n` +
         `• **Office** — Greenwood Mall, Meru Town, Kenya\n\n` +
         `For a question about a specific house, use **Message Kheja_Link** on the listing — our reply ` +
         `lands in your in-app Inbox.`,

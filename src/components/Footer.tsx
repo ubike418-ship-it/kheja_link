@@ -1,9 +1,11 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Facebook, Twitter, Instagram, Linkedin, Mail, Phone, MapPin } from "lucide-react";
+import { Mail, Phone, MapPin } from "lucide-react";
 import Link from "next/link";
 import { LogoMark } from "@/components/Logo";
+import { TikTokIcon, WhatsAppIcon } from "@/components/SocialIcons";
+import { SOCIAL } from "@/lib/social";
 
 const quickLinks = [
   { label: "Search Rentals", href: "/properties" },
@@ -21,11 +23,10 @@ const supportLinks = [
   { label: "Contact Us", href: "/help#contact" },
 ];
 
+/** The only two channels Kheja_Link runs — see src/lib/social.ts. */
 const socials = [
-  { Icon: Facebook, label: "Facebook" },
-  { Icon: Twitter, label: "X" },
-  { Icon: Instagram, label: "Instagram" },
-  { Icon: Linkedin, label: "LinkedIn" },
+  { Icon: TikTokIcon, label: SOCIAL.tiktok.label, href: SOCIAL.tiktok.url, hover: "#ffffff", hoverBg: "rgba(255, 255, 255, 0.12)" },
+  { Icon: WhatsAppIcon, label: SOCIAL.whatsapp.label, href: SOCIAL.whatsapp.url, hover: "#25D366", hoverBg: "rgba(37, 211, 102, 0.12)" },
 ];
 
 export default function Footer() {
@@ -51,12 +52,15 @@ export default function Footer() {
               rental space with technology and transparency.
             </p>
             <div className="flex gap-4">
-              {socials.map(({ Icon, label }) => (
+              {socials.map(({ Icon, label, href, hover, hoverBg }) => (
                 <motion.a
                   key={label}
-                  href="#"
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   aria-label={`Kheja_Link on ${label}`}
-                  whileHover={{ y: -8, color: "#2563eb", backgroundColor: "rgba(37, 99, 235, 0.1)" }}
+                  title={`Kheja_Link on ${label}`}
+                  whileHover={{ y: -8, color: hover, backgroundColor: hoverBg }}
                   className="w-12 h-12 rounded-2xl bg-zinc-900 flex items-center justify-center text-zinc-400 transition-all duration-300"
                 >
                   <Icon className="w-5 h-5" />
@@ -126,6 +130,28 @@ export default function Footer() {
                   <Phone className="w-5 h-5 group-hover:text-white" />
                 </span>
                 <span className="font-bold">+254 710 655 709</span>
+              </a>
+              <a
+                href={SOCIAL.whatsapp.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-4 text-zinc-400 group hover:text-white transition-colors"
+              >
+                <span className="w-10 h-10 rounded-xl bg-[#25D366]/10 flex items-center justify-center group-hover:bg-[#25D366] transition-colors">
+                  <WhatsAppIcon className="w-5 h-5 text-[#25D366] group-hover:text-white" />
+                </span>
+                <span className="font-bold">WhatsApp {SOCIAL.whatsapp.number}</span>
+              </a>
+              <a
+                href={SOCIAL.tiktok.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-4 text-zinc-400 group hover:text-white transition-colors"
+              >
+                <span className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center group-hover:bg-white group-hover:text-black transition-colors">
+                  <TikTokIcon className="w-5 h-5" />
+                </span>
+                <span className="font-bold">TikTok {SOCIAL.tiktok.handle}</span>
               </a>
               <div className="flex items-start gap-4 text-zinc-400">
                 <span className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center shrink-0">

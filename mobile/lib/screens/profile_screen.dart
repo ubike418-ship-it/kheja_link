@@ -7,6 +7,7 @@ import '../main.dart';
 import '../models/models.dart';
 import '../services/kheja_api.dart';
 import '../widgets/brand.dart';
+import '../widgets/social_links.dart';
 import '../widgets/states.dart';
 import '../config/app_state.dart';
 import 'auth_screen.dart';
@@ -138,37 +139,49 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _signedOutView() {
     final theme = Theme.of(context);
 
+    // Fills the screen on a tall phone, scrolls on a small one.
     return Scaffold(
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 20),
-              const BrandLockup(size: 46, fontSize: 25),
-              const Spacer(),
-              Text('Your account.', style: theme.textTheme.displaySmall),
-              const SizedBox(height: 12),
-              Text(
-                'Sign in to save homes you like, keep track of your messages, or '
-                'list a property of your own.',
-                style:
-                    theme.textTheme.bodyLarge?.copyWith(color: KhejaColors.zinc500),
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight: constraints.maxHeight - 48,
               ),
-              const SizedBox(height: 32),
-              FilledButton(
-                onPressed: () => _openAuth(),
-                child: const Text('Sign in'),
+              child: IntrinsicHeight(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 20),
+                    const BrandLockup(size: 46, fontSize: 25),
+                    const Spacer(),
+                    Text('Your account.', style: theme.textTheme.displaySmall),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Sign in to save homes you like, keep track of your messages, or '
+                      'list a property of your own.',
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: KhejaColors.zinc500,
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                    FilledButton(
+                      onPressed: () => _openAuth(),
+                      child: const Text('Sign in'),
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton(
+                      onPressed: () => _openAuth(signUp: true),
+                      child: const Text('Create an account'),
+                    ),
+                    const Spacer(),
+                    const SizedBox(height: 24),
+                    const _SupportLinks(),
+                  ],
+                ),
               ),
-              const SizedBox(height: 12),
-              OutlinedButton(
-                onPressed: () => _openAuth(signUp: true),
-                child: const Text('Create an account'),
-              ),
-              const Spacer(),
-              const _SupportLinks(),
-            ],
+            ),
           ),
         ),
       ),
@@ -221,14 +234,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     Row(
                       children: [
                         if (profile.isVerified) ...[
-                          const Icon(Icons.verified_rounded,
-                              size: 14, color: KhejaColors.emerald),
+                          const Icon(
+                            Icons.verified_rounded,
+                            size: 14,
+                            color: KhejaColors.emerald,
+                          ),
                           const SizedBox(width: 4),
                         ],
                         Text(
                           profile.role.toUpperCase(),
-                          style:
-                              kEyebrowStyle.copyWith(color: KhejaColors.zinc400),
+                          style: kEyebrowStyle.copyWith(
+                            color: KhejaColors.zinc400,
+                          ),
                         ),
                       ],
                     ),
@@ -253,7 +270,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   mode: LaunchMode.externalApplication,
                 );
                 if (!ok && context.mounted) {
-                  showKhejaSnack(context, 'Could not open the browser.', isError: true);
+                  showKhejaSnack(
+                    context,
+                    'Could not open the browser.',
+                    isError: true,
+                  );
                 }
               },
             ),
@@ -266,7 +287,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _Tile(
               icon: Icons.home_work_rounded,
               label: 'My listings',
-              subtitle: 'Publish, edit, set availability and retire your houses',
+              subtitle:
+                  'Publish, edit, set availability and retire your houses',
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const MyListingsScreen()),
               ),
@@ -290,7 +312,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: 28),
           ],
 
-
           if (!profile.isLandlord) ...[
             Text('House hunting', style: theme.textTheme.titleLarge),
             const SizedBox(height: 14),
@@ -298,9 +319,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               icon: Icons.lock_open_rounded,
               label: 'Unlocks & refunds',
               subtitle: 'How unlocking works, give us a house, your refunds',
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const HuntingScreen()),
-              ),
+              onTap: () => Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const HuntingScreen())),
             ),
             _Tile(
               icon: Icons.inbox_rounded,
@@ -332,15 +353,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
             label: 'Notification preferences',
             subtitle: 'Choose what appears in your Inbox',
             onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const NotificationPreferencesScreen()),
+              MaterialPageRoute(
+                builder: (_) => const NotificationPreferencesScreen(),
+              ),
             ),
           ),
           _Tile(
             icon: Icons.tour_rounded,
             label: 'Show me around again',
             subtitle: 'Replay the guided tour',
-            onTap: () => AppState.instance
-                .requestTutorial(profile.isLandlord ? 'landlord' : 'tenant'),
+            onTap: () => AppState.instance.requestTutorial(
+              profile.isLandlord ? 'landlord' : 'tenant',
+            ),
           ),
           const SizedBox(height: 28),
 
@@ -434,7 +458,10 @@ class _Tile extends StatelessWidget {
                     ],
                   ),
                 ),
-                const Icon(Icons.chevron_right_rounded, color: KhejaColors.zinc400),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: KhejaColors.zinc400,
+                ),
               ],
             ),
           ),
@@ -448,7 +475,10 @@ class _SupportLinks extends StatelessWidget {
   const _SupportLinks();
 
   Future<void> _open(BuildContext context, String url) async {
-    final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    final ok = await launchUrl(
+      Uri.parse(url),
+      mode: LaunchMode.externalApplication,
+    );
     if (!ok && context.mounted) {
       showKhejaSnack(context, 'Could not open that link.', isError: true);
     }
@@ -459,8 +489,12 @@ class _SupportLinks extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Support',
-            style: kEyebrowStyle.copyWith(color: KhejaColors.zinc400)),
+        const SocialLinks(),
+        const SizedBox(height: 22),
+        Text(
+          'Support',
+          style: kEyebrowStyle.copyWith(color: KhejaColors.zinc400),
+        ),
         const SizedBox(height: 12),
         Wrap(
           spacing: 20,
@@ -558,12 +592,15 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     final theme = Theme.of(context);
 
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
       child: Container(
         decoration: BoxDecoration(
           color: theme.scaffoldBackgroundColor,
-          borderRadius:
-              const BorderRadius.vertical(top: Radius.circular(KhejaRadius.xxl)),
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(KhejaRadius.xxl),
+          ),
         ),
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
@@ -579,8 +616,9 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                   controller: _name,
                   textCapitalization: TextCapitalization.words,
                   decoration: const InputDecoration(labelText: 'Full name'),
-                  validator: (value) =>
-                      (value?.trim().length ?? 0) < 2 ? 'Tell us your name' : null,
+                  validator: (value) => (value?.trim().length ?? 0) < 2
+                      ? 'Tell us your name'
+                      : null,
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
@@ -594,7 +632,9 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                     final text = value?.trim() ?? '';
                     if (text.isEmpty) return null;
                     final digits = text.replaceAll(RegExp(r'\D'), '');
-                    return digits.length >= 7 ? null : 'Enter a valid phone number';
+                    return digits.length >= 7
+                        ? null
+                        : 'Enter a valid phone number';
                   },
                 ),
                 const SizedBox(height: 16),
@@ -617,7 +657,9 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                           width: 20,
                           height: 20,
                           child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white),
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
                         )
                       : const Text('Save changes'),
                 ),
