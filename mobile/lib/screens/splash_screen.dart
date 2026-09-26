@@ -7,7 +7,6 @@ import '../config/theme.dart';
 import '../widgets/brand.dart';
 import '../main.dart';
 import 'app_shell.dart';
-import 'permissions_screen.dart';
 import 'role_select_screen.dart';
 
 /// The first thing anyone sees: the Kheja_Link mark on the brand's own dark
@@ -66,13 +65,12 @@ class _SplashScreenState extends State<SplashScreen>
 
     if (!mounted) return;
 
-    // First run: permissions, then the tenant/landlord door. After that, a
-    // signed-in person goes straight in (their account decides which app), and
-    // a signed-out one goes back to the door until they have picked a side.
+    // A signed-in person goes straight in (their account decides which app),
+    // and a signed-out one goes to the tenant/landlord door until they have
+    // picked a side. No permissions are asked up front: location is asked only
+    // when a landlord pins their house.
     final Widget next;
-    if (!AppState.instance.permissionsAsked) {
-      next = const PermissionsScreen();
-    } else if (khejaApi.isSignedIn || AppState.instance.hasChosenRole) {
+    if (khejaApi.isSignedIn || AppState.instance.hasChosenRole) {
       next = const AppShell();
     } else {
       next = const RoleSelectScreen();

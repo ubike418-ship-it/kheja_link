@@ -749,9 +749,9 @@ class _ListingEditorScreenState extends State<ListingEditorScreen> {
               scrollDirection: Axis.horizontal,
               buildDefaultDragHandles: false,
               itemCount: _draft.photoUrls.length,
-              onReorder: (from, to) => setState(() {
+              // The new index already allows for the removed item.
+              onReorderItem: (from, to) => setState(() {
                 final list = [..._draft.photoUrls];
-                if (to > from) to -= 1;
                 list.insert(to, list.removeAt(from));
                 _draft.photoUrls = list;
               }),

@@ -4,6 +4,7 @@ import { UserCog } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import ProfileForm from "@/components/ProfileForm";
+import DeleteAccountSection from "@/components/DeleteAccountSection";
 import { getCurrentProfile, getCurrentUser } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -38,6 +39,8 @@ export default async function AccountPage() {
           <div className="p-8 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[2.5rem]">
             <ProfileForm profile={profile} email={user.email} />
           </div>
+
+          <DeleteAccountSection />
         </div>
       </main>
 

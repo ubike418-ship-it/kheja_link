@@ -1248,6 +1248,30 @@ class KhejaApi {
 
   Future<void> signOut() => _client.auth.signOut();
 
+  /// Deletes the signed-in account and everything it owns, then signs out.
+  /// Uploaded files go first (the account's own folder in each bucket), while
+  /// the account still has the right to remove them.
+  Future<void> deleteMyAccount() async {
+    final user = currentUser;
+    if (user == null) throw const NotSignedInException();
+    for (final bucket in const [_photoBucket, _videoBucket, 'avatars']) {
+      try {
+        final files = await _client.storage.from(bucket).list(path: user.id);
+        final paths = files.map((f) => '${user.id}/${f.name}').toList();
+        if (paths.isNotEmpty) await _client.storage.from(bucket).remove(paths);
+      } catch (_) {
+        // Best effort: the account deletion below must not depend on it.
+      }
+    }
+    await KhejaNetwork.run(() => _client.rpc('delete_my_account'));
+    try {
+      await _client.auth.signOut();
+    } catch (_) {
+      // The account is already gone; clearing the local session is all that
+      // is left, and signOut does that even when the server call fails.
+    }
+  }
+
   Future<void> resetPassword(String email) =>
       _client.auth.resetPasswordForEmail(email.trim());
 }
@@ -1311,6 +1335,9 @@ String describeError(Object error) {
       return 'That change is no longer possible. Pull down to refresh.';
     }
     if (text.contains('no longer listed')) return 'This home is no longer listed.';
+    if (text.contains('only admin')) {
+      return 'You are the only admin. Make someone else an admin before deleting your account.';
+    }
     if (text.contains('houses waiting for review')) {
       return 'You already have 5 houses waiting for review. We will get to them soon.';
     }

@@ -5,21 +5,26 @@ const supabaseHost = supabaseUrl ? new URL(supabaseUrl).hostname : undefined;
 const isProd = process.env.NODE_ENV === "production";
 
 /**
- * Content Security Policy. Scripts and styles may only come from this site
- * (Next.js still needs inline bootstrapping); data, images and video only from
- * this site, Supabase and the demo photos. No framing by anyone, no plugins,
- * and forms may only post back here.
+ * Content Security Policy.
+ *
+ * Google AdSense loads scripts, images and ad frames from a long and changing
+ * list of Google domains (googlesyndication, doubleclick, google.com and its
+ * country domains, adtrafficquality, gstatic…), so scripts, frames, images and
+ * connections are allowed from any HTTPS origin — naming them one by one
+ * would silently block ads whenever Google adds a host. Still enforced: HTTPS
+ * only, no plugins, no one may frame this site, forms post only here, and no
+ * base-tag hijacking.
  */
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isProd ? "" : " 'unsafe-eval'"}`,
+  `script-src 'self' 'unsafe-inline' https:${isProd ? "" : " 'unsafe-eval'"}`,
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
-  `img-src 'self' data: blob:${supabaseHost ? ` https://${supabaseHost}` : ""} https://images.unsplash.com`,
+  "img-src 'self' data: blob: https:",
   `media-src 'self' blob:${supabaseHost ? ` https://${supabaseHost}` : ""}`,
-  `connect-src 'self'${supabaseHost ? ` https://${supabaseHost} wss://${supabaseHost}` : ""}`,
+  `connect-src 'self' https:${supabaseHost ? ` wss://${supabaseHost}` : ""}`,
   "frame-ancestors 'none'",
-  "frame-src 'none'",
+  "frame-src https:",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -37,7 +42,8 @@ const securityHeaders = [
     key: "Permissions-Policy",
     value: "camera=(), microphone=(), geolocation=(self), payment=(), usb=(), interest-cohort=()",
   },
-  { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+  // Ads open advertisers' pages in new windows; same-origin would break that.
+  { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
   { key: "X-DNS-Prefetch-Control", value: "on" },
 ];
 

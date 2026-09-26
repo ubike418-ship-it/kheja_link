@@ -1,7 +1,7 @@
 name: kheja_link
 description: "Kheja_Link — find your next rental home in Meru, Kenya."
 publish_to: 'none'
-version: 1.6.3+13
+version: 1.7.0+14
 
 environment:
   sdk: ^3.9.0
@@ -22,10 +22,8 @@ dependencies:
   shimmer: ^3.0.0
   image_picker: ^1.1.2
 
-  # Remembers the light/dark choice and whether permissions were asked.
+  # Remembers the light/dark choice, the chosen door and the tours seen.
   shared_preferences: ^2.3.3
-  # Notification and location permissions, asked once on first run.
-  permission_handler: ^11.3.1
   # QR shown in-app so someone can share the download with a friend.
   qr_flutter: ^4.1.0
   # Talks to the Kheja_Link server to start a payment.

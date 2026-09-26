@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// App-wide preferences that outlive a screen: the light/dark choice and
-/// whether we have already asked for permissions.
+/// App-wide preferences that outlive a screen: the light/dark choice, the
+/// door (tenant or landlord) chosen, and which tours have been seen.
 ///
 /// There is no "system" option by design — the app is light or dark, and you
 /// flip it by double-tapping anywhere in the app rather than hunting for a
@@ -13,12 +13,10 @@ class AppState extends ChangeNotifier {
   static final AppState instance = AppState._();
 
   static const _kTheme = 'kheja.theme';
-  static const _kOnboarded = 'kheja.permissions_asked';
   static const _kRole = 'kheja.chosen_role';
   static String _kTutorial(String role) => 'kheja.onboarding_completed.$role';
 
   ThemeMode _themeMode = ThemeMode.light;
-  bool _permissionsAsked = false;
   bool _loaded = false;
 
   /// Roles whose first-run tutorial this device has finished or skipped:
@@ -39,7 +37,6 @@ class AppState extends ChangeNotifier {
 
   ThemeMode get themeMode => _themeMode;
   bool get isDark => _themeMode == ThemeMode.dark;
-  bool get permissionsAsked => _permissionsAsked;
   bool get isLoaded => _loaded;
   String? get chosenRole => _chosenRole;
   bool get hasChosenRole => _chosenRole != null;
@@ -70,7 +67,6 @@ class AppState extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       _themeMode =
           (prefs.getString(_kTheme) == 'dark') ? ThemeMode.dark : ThemeMode.light;
-      _permissionsAsked = prefs.getBool(_kOnboarded) ?? false;
       _chosenRole = prefs.getString(_kRole);
       for (final role in const ['tenant', 'landlord']) {
         if (prefs.getBool(_kTutorial(role)) ?? false) _toured.add(role);
@@ -103,15 +99,6 @@ class AppState extends ChangeNotifier {
       } else {
         await prefs.setString(_kRole, role);
       }
-    } catch (_) {}
-  }
-
-  Future<void> markPermissionsAsked() async {
-    _permissionsAsked = true;
-    notifyListeners();
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_kOnboarded, true);
     } catch (_) {}
   }
 }

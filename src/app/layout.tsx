@@ -13,6 +13,9 @@ const geist = Geist({
 
 const siteUrl = getSiteUrl();
 
+/** Google AdSense publisher ID (also in public/ads.txt and public/app-ads.txt). */
+const ADSENSE_CLIENT = "ca-pub-3771359841277271";
+
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
@@ -45,6 +48,8 @@ export const metadata: Metadata = {
     description: "The modern way to find long-term rentals in Meru, Kenya.",
   },
   robots: { index: true, follow: true },
+  // AdSense site-ownership verification (the meta-tag method).
+  other: { "google-adsense-account": ADSENSE_CLIENT },
 };
 
 export const viewport: Viewport = {
@@ -61,6 +66,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={geist.variable}>
+      <head>
+        {/* Google AdSense: verifies the site and serves ads. Exactly Google's
+            snippet — a plain async script in the head of every page. */}
+        <script
+          async
+          src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${ADSENSE_CLIENT}`}
+          crossOrigin="anonymous"
+        />
+      </head>
       <body className="antialiased">
         {children}
         <AIChatAssistant />

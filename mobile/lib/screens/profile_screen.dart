@@ -56,6 +56,75 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (mounted) _reload();
   }
 
+  /// Google Play requires in-app account deletion. Two steps: a warning that
+  /// says exactly what goes, then typing DELETE, so it cannot happen by a slip.
+  Future<void> _deleteAccount() async {
+    final typed = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(KhejaRadius.lg),
+          ),
+          title: const Text('Delete your account?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'This permanently deletes your Kheja_Link account and everything '
+                'in it: your profile, listings, saved homes, alerts, requests, '
+                'messages, unlocks and notifications. It cannot be undone.',
+              ),
+              const SizedBox(height: 16),
+              const Text('Type DELETE to confirm.',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 8),
+              TextField(
+                controller: typed,
+                autofocus: true,
+                textCapitalization: TextCapitalization.characters,
+                onChanged: (_) => setDialogState(() {}),
+                decoration: const InputDecoration(hintText: 'DELETE'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Keep my account'),
+            ),
+            TextButton(
+              onPressed: typed.text.trim().toUpperCase() == 'DELETE'
+                  ? () => Navigator.of(context).pop(true)
+                  : null,
+              style: TextButton.styleFrom(foregroundColor: KhejaColors.red),
+              child: const Text('Delete for good'),
+            ),
+          ],
+        ),
+      ),
+    );
+    typed.dispose();
+
+    if (confirmed != true || !mounted) return;
+    try {
+      await khejaApi.deleteMyAccount();
+    } catch (error) {
+      if (!mounted) return;
+      showKhejaSnack(context, describeError(error), isError: true);
+      return;
+    }
+    await AppState.instance.setChosenRole(null);
+    if (!mounted) return;
+    showKhejaSnack(context, 'Your account has been deleted.');
+    await Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const RoleSelectScreen()),
+      (_) => false,
+    );
+  }
+
   Future<void> _signOut() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -269,7 +338,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   Uri.parse('${SupabaseConfig.siteUrl}/admin'),
                   mode: LaunchMode.externalApplication,
                 );
-                if (!ok && context.mounted) {
+                if (!ok && mounted) {
                   showKhejaSnack(
                     context,
                     'Could not open the browser.',
@@ -369,6 +438,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 28),
 
           const _SupportLinks(),
+          const SizedBox(height: 28),
+          Center(
+            child: TextButton.icon(
+              onPressed: _deleteAccount,
+              style: TextButton.styleFrom(foregroundColor: KhejaColors.red),
+              icon: const Icon(Icons.delete_forever_rounded, size: 18),
+              label: const Text('Delete my account'),
+            ),
+          ),
           const SizedBox(height: 28),
 
           OutlinedButton.icon(

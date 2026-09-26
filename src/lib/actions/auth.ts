@@ -87,6 +87,38 @@ export async function signInAction(
   return { ok: true, data: { redirectTo: safeRedirect(next) } };
 }
 
+/**
+ * Deletes the signed-in person's own account (Google Play requires this in
+ * the app and on the web). The database removes the sign-in and everything it
+ * owns; this then clears the session and goes home.
+ */
+export async function deleteMyAccountAction(): Promise<ActionResult | void> {
+  const supabase = await createClient();
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Sign in to continue." };
+
+  // Uploaded files first, from the account's own folder in each bucket, while
+  // it still has the right to remove them. Best effort.
+  for (const bucket of ["property-images", "property-videos", "avatars"]) {
+    const { data: files } = await supabase.storage.from(bucket).list(user.id, { limit: 1000 });
+    const paths = (files ?? []).map((f) => `${user.id}/${f.name}`);
+    if (paths.length) await supabase.storage.from(bucket).remove(paths);
+  }
+
+  const { error } = await supabase.rpc("delete_my_account");
+  if (error) {
+    return {
+      ok: false,
+      error: /only admin/.test(error.message)
+        ? "You are the only admin. Make someone else an admin before deleting your account."
+        : "Could not delete your account. Please try again.",
+    };
+  }
+  await supabase.auth.signOut();
+  revalidatePath("/", "layout");
+  redirect("/?account=deleted");
+}
+
 export async function signOutAction(): Promise<void> {
   const supabase = await createClient();
   await supabase.auth.signOut();

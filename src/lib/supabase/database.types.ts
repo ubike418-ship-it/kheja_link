@@ -451,6 +451,10 @@ export type Database = {
           unlocks: number;
         }[];
       };
+      delete_my_account: {
+        Args: Record<string, never>;
+        Returns: boolean;
+      };
       admin_delete_user: {
         Args: { p_user_id: string };
         Returns: boolean;
