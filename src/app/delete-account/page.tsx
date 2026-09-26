@@ -37,6 +37,21 @@ const sections: LegalSection[] = [
     ],
   },
   {
+    id: "some-data",
+    heading: "Delete some of your data, and keep your account",
+    paragraphs: [
+      "You can delete parts of your data yourself at any time, in the app or on the website, without deleting your account. Each is deleted straight away and permanently:",
+    ],
+    bullets: [
+      "A listing (landlords), with its photos, videos, contact numbers and exact location: Account → My listings → tap the red bin (Delete listing) next to it. On the website: Dashboard → Listings → Delete.",
+      "A saved home: tap the heart on the listing again.",
+      "An alert, or a \"notify me\" on a home: Account → My requests → Waiting for → tap the bell (Stop notifying me).",
+      "A house request: Account → My requests → Requests → Withdraw.",
+      "Your phone number or other profile details: Account → edit your profile, clear the field and save.",
+      "Anything else — notifications, messages you sent us, or a house you gave us — email hello@khejalink.co.ke or WhatsApp +254 710 655709 and we delete it within 7 days.",
+    ],
+  },
+  {
     heading: "What is deleted",
     paragraphs: ["Everything linked to your account is permanently deleted:"],
     bullets: [
