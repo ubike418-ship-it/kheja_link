@@ -258,7 +258,7 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
         `• **No confirmation email?** Check your spam folder first — it usually lands there. The link ` +
         `expires after a while, so if it's old, sign up again with the same address.\n` +
         `• **"Email not confirmed"?** You need to click the link in that email before your first sign-in.\n\n` +
-        `Still stuck? Email hello@khejalink.name.ng and we'll sort it out.`,
+        `Still stuck? Email ubike418@gmail.com and we'll sort it out.`,
       href: "/login",
       hrefLabel: "Go to sign in",
       suggestions: ["Is it free?", "How do I contact support?"],
@@ -420,7 +420,7 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
         `to let the property.\n\n` +
         `It's a signal of good faith, not a guarantee — always still view a house in person and see the ` +
         `paperwork before paying anything.\n\n` +
-        `If you're a landlord and want to be verified, email hello@khejalink.name.ng from the address on ` +
+        `If you're a landlord and want to be verified, email ubike418@gmail.com from the address on ` +
         `your account.`,
       suggestions: ["Is it safe?", "How do I list my house?"],
     }),
@@ -450,7 +450,7 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
         `• Be suspicious of rent far below the going rate for the area — it's the oldest trick there is.\n` +
         `• Get a written, signed tenancy agreement before you move in.\n` +
         `• Pay traceably and always get a receipt.\n\n` +
-        `If a listing looks fraudulent, email hello@khejalink.name.ng and we'll take it down.`,
+        `If a listing looks fraudulent, email ubike418@gmail.com and we'll take it down.`,
       href: "/help#safety",
       hrefLabel: "Full safety guide",
       suggestions: ["What should I check at a viewing?", "What is the verified badge?"],
@@ -509,7 +509,7 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
     ],
     answer: () => ({
       message:
-        `Please tell us — email hello@khejalink.name.ng with the listing's link and what's wrong.\n\n` +
+        `Please tell us — email ubike418@gmail.com with the listing's link and what's wrong.\n\n` +
         `We remove listings that turn out to be fraudulent, and we nudge landlords who leave rented ` +
         `houses up. Reports like yours are the main way we keep the listings honest.`,
       href: "/help#contact",
@@ -533,7 +533,7 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
     answer: () => ({
       message:
         `You can reach the Kheja_Link team at:\n\n` +
-        `• **Email** — hello@khejalink.name.ng\n` +
+        `• **Email** — ubike418@gmail.com\n` +
         `• **Phone** — +254 710 655 709\n` +
         `• **WhatsApp** — +254 710 655709 (wa.me/254710655709)\n` +
         `• **TikTok** — @kheja_link\n` +
@@ -563,7 +563,7 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
         `• **Saved homes are private to you** — landlords can't see them.\n` +
         `• A **message about a listing is readable only by the Kheja_Link team, and by you**.\n` +
         `• We don't sell your data or run advertising trackers.\n\n` +
-        `To delete your account and everything attached to it, email hello@khejalink.name.ng.`,
+        `To delete your account and everything attached to it, use "Delete my account" on your Account page, in the app or on the website — or email ubike418@gmail.com.`,
       href: "/privacy",
       hrefLabel: "Privacy policy",
       suggestions: ["How do I contact support?", "Is it safe?"],

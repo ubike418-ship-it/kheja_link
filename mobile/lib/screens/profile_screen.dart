@@ -591,8 +591,8 @@ class _SupportLinks extends StatelessWidget {
               onTap: () => _open(context, '${SupabaseConfig.siteUrl}/privacy'),
             ),
             _Link(
-              label: 'hello@khejalink.co.ke',
-              onTap: () => _open(context, 'mailto:hello@khejalink.co.ke'),
+              label: 'ubike418@gmail.com',
+              onTap: () => _open(context, 'mailto:ubike418@gmail.com'),
             ),
           ],
         ),

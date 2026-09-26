@@ -33,7 +33,7 @@ export default function GlobalError({
           </h1>
           <p style={{ color: "#71717a", fontWeight: 500, lineHeight: 1.6, marginTop: "1rem" }}>
             Kheja_Link ran into an unexpected problem. Try again — if it keeps happening, let us know
-            at hello@khejalink.co.ke.
+            at ubike418@gmail.com.
           </p>
           {error.digest && (
             <p style={{ color: "#a1a1aa", fontSize: "0.75rem", marginTop: "0.5rem" }}>

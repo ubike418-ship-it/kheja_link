@@ -18,7 +18,7 @@ const sections: LegalSection[] = [
   {
     heading: "Who we are",
     paragraphs: [
-      "Kheja_Link is a long-term rental platform for Meru, Kenya, available as an Android app and at www.khejalink.name.ng. This policy covers both. Questions go to hello@khejalink.co.ke or WhatsApp +254 710 655709.",
+      "Kheja_Link is a long-term rental platform for Meru, Kenya, available as an Android app and at www.khejalink.name.ng. This policy covers both. Questions go to ubike418@gmail.com or WhatsApp +254 710 655709.",
     ],
   },
   {
@@ -79,7 +79,7 @@ const sections: LegalSection[] = [
     heading: "Deleting your account",
     paragraphs: [
       "You can delete your account yourself at any time: in the app, go to Account and tap “Delete my account”; on the website, sign in and go to your Account page. Deletion is immediate and permanent and removes your profile, listings, saved homes, alerts, requests, messages, unlock records and notifications.",
-      "If you can no longer sign in, email hello@khejalink.co.ke from the address on your account and we will delete it within 7 days. More at www.khejalink.name.ng/delete-account.",
+      "If you can no longer sign in, email ubike418@gmail.com from the address on your account and we will delete it within 7 days. More at www.khejalink.name.ng/delete-account.",
       "The photos and videos you uploaded are removed from our storage at the same time, and so are your payment records with us. Paystack keeps its own record of a payment under its own policy.",
     ],
   },

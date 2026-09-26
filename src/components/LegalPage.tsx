@@ -76,8 +76,8 @@ export default function LegalPage({
 
           <p className="pt-8 border-t border-zinc-200 dark:border-zinc-800 text-sm font-medium text-zinc-500">
             Questions about this page? Email{" "}
-            <a href="mailto:hello@khejalink.co.ke" className="font-black text-blue-600 hover:underline">
-              hello@khejalink.co.ke
+            <a href="mailto:ubike418@gmail.com" className="font-black text-blue-600 hover:underline">
+              ubike418@gmail.com
             </a>
             .
           </p>

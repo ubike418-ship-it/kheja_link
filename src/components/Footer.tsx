@@ -114,13 +114,13 @@ export default function Footer() {
             </h4>
             <div className="space-y-6">
               <a
-                href="mailto:hello@khejalink.co.ke"
+                href="mailto:ubike418@gmail.com"
                 className="flex items-center gap-4 text-zinc-400 group hover:text-white transition-colors"
               >
                 <span className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center group-hover:bg-blue-500 transition-colors">
                   <Mail className="w-5 h-5 group-hover:text-white" />
                 </span>
-                <span className="font-bold">hello@khejalink.co.ke</span>
+                <span className="font-bold">ubike418@gmail.com</span>
               </a>
               <a
                 href="tel:+254710655709"

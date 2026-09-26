@@ -130,13 +130,13 @@ export default async function HelpPage() {
             </h2>
             <div className="p-8 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[2.5rem] space-y-5">
               <a
-                href="mailto:hello@khejalink.co.ke"
+                href="mailto:ubike418@gmail.com"
                 className="flex items-center gap-4 text-zinc-600 dark:text-zinc-400 hover:text-blue-600 transition-colors"
               >
                 <span className="w-11 h-11 rounded-2xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center">
                   <Mail className="w-5 h-5 text-blue-600" />
                 </span>
-                <span className="font-bold">hello@khejalink.co.ke</span>
+                <span className="font-bold">ubike418@gmail.com</span>
               </a>
               <a
                 href="tel:+254710655709"

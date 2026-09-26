@@ -27,7 +27,7 @@ export default function Error({
         </h1>
         <p className="text-zinc-500 font-medium">
           We could not load this page. Try again — if it keeps happening, let us know at
-          hello@khejalink.co.ke.
+          ubike418@gmail.com.
         </p>
         {error.digest && <p className="text-xs font-bold text-zinc-400">Reference: {error.digest}</p>}
       </div>

@@ -33,7 +33,7 @@ const sections: LegalSection[] = [
   {
     heading: "If you cannot sign in",
     paragraphs: [
-      "Email hello@khejalink.co.ke, or WhatsApp +254 710 655709, from the email address or phone number on your account and ask us to delete it. We confirm your identity and delete the account within 7 days.",
+      "Email ubike418@gmail.com, or WhatsApp +254 710 655709, from the email address or phone number on your account and ask us to delete it. We confirm your identity and delete the account within 7 days.",
     ],
   },
   {
@@ -48,7 +48,7 @@ const sections: LegalSection[] = [
       "An alert, or a \"notify me\" on a home: Account → My requests → Waiting for → tap the bell (Stop notifying me).",
       "A house request: Account → My requests → Requests → Withdraw.",
       "Your phone number or other profile details: Account → edit your profile, clear the field and save.",
-      "Anything else — notifications, messages you sent us, or a house you gave us — email hello@khejalink.co.ke or WhatsApp +254 710 655709 and we delete it within 7 days.",
+      "Anything else — notifications, messages you sent us, or a house you gave us — email ubike418@gmail.com or WhatsApp +254 710 655709 and we delete it within 7 days.",
     ],
   },
   {
